@@ -1,0 +1,77 @@
+project_name: gemaal
+
+version: 2
+
+builds:
+  - id: gemaal
+    main: ./cmd/gemaal
+    binary: gemaal
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+  - id: gemaalctl
+    main: ./cmd/gemaalctl
+    binary: gemaalctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - id: gemaal
+    ids:
+      - gemaal
+    formats: [tar.gz]
+    name_template: "gemaal_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: gemaalctl
+    ids:
+      - gemaalctl
+    formats: [tar.gz]
+    name_template: "gemaalctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: truvity
+    name: gemaal
+  header: |
+    ## gemaal {{ .Tag }}
+
+    ### Install
+
+    ```bash
+    # Via go run (no install needed):
+    go run github.com/truvity/gemaal/cmd/gemaalctl@{{ .Tag }} --help
+    ```
+
+changelog:
+  use: github
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"

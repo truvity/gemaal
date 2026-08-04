@@ -1,0 +1,32 @@
+# Third-party actions are pinned to commit SHAs (exact version tag noted
+# inline) so this repo starts clean on the unpinned-actions CodeQL finding.
+#
+# G1 releases binaries only. The service image (ko) and chart publishing
+# arrive with G3/G4, mirroring the github-roster release shape.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
+
+      - name: Install devbox
+        run: curl -fsSL https://get.jetify.com/devbox | bash -s -- -f
+
+      - name: GoReleaser
+        run: devbox run -- goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

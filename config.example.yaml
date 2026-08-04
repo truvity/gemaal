@@ -1,0 +1,39 @@
+# gemaal — example configuration.
+#
+# One document, validated at startup. It says what this instance watches
+# and what it may ever touch: anything not allow-listed here is
+# structurally out of reach. Deployment-specific values (real buckets,
+# real roots, tier numbers) belong to the deployer, not this repo.
+
+listen: :8080
+
+# Domain for the ledger labels: <domain>/ttl, <domain>/keep-until,
+# <domain>/execution-id. Public default; a deployment may brand its own.
+labelDomain: gemaal.io
+
+# Plan-only until someone deliberately flips this: the service computes
+# and reports, and deletes nothing.
+dryRun: true
+
+# How often the housekeeping loop ticks.
+housekeepingInterval: 1m
+
+# An orphaned artifact younger than this is left alone.
+grace: 48h
+
+# Tier defaults, keyed by the tier label value. A release without an
+# explicit ttl label inherits its tier's default. Tiers differ only in
+# numbers — one mechanism, no special cases.
+tiers:
+  emp:
+    ttl: 14h
+  ci:
+    ttl: 24h
+
+# The only places sweeps may ever touch. Roots, not patterns.
+allowList:
+  s3Buckets: []
+  # Parameter-store roots must live under /test/ — configuration that is
+  # not test-shaped refuses to load, and /secrets is refused outright.
+  ssmRoots:
+    - /test/

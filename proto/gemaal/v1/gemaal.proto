@@ -1,0 +1,174 @@
+// gemaal/v1 — the public API of the gemaal service.
+//
+// gemaal is a watcher, not a deployer: nothing in this API installs
+// anything. Plan and Sweep are the janitor face; ListTenants the console
+// face; Checkout and Extend the tenant-lifetime face; Resolve the
+// identity authority. See docs/design.md for the tenancy model.
+
+syntax = "proto3";
+
+package gemaal.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// GemaalService is the single public surface of the gemaal service.
+service GemaalService {
+  // Plan computes, without side effects, what housekeeping would do right
+  // now. Every action carries the rule that fired and a human-readable
+  // reason with the numbers in it.
+  rpc Plan(PlanRequest) returns (PlanResponse);
+
+  // ListTenants enumerates the watched installations with their ledger
+  // state (labels, effective TTL, pending action).
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+
+  // Checkout claims a tenant slot for the caller, stamping keep-until so
+  // the housekeeping loop leaves it alone for the requested window.
+  rpc Checkout(CheckoutRequest) returns (CheckoutResponse);
+
+  // Extend pushes an existing tenant's keep-until forward.
+  rpc Extend(ExtendRequest) returns (ExtendResponse);
+
+  // Sweep executes the current plan. The server's dry-run configuration
+  // wins: a dry-run server reports what it would have done and deletes
+  // nothing.
+  rpc Sweep(SweepRequest) returns (SweepResponse);
+
+  // Resolve maps an employee email — extracted client-side by an
+  // identity evidence driver — to the slug and namespace the service's
+  // personnel-sourced configuration assigns it.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+}
+
+// Tenant is one watched installation: its identity plus its ledger state.
+message Tenant {
+  // Namespace of the installation (helm driver family).
+  string namespace = 1;
+  // Release name (helm) or stack name (pulumi).
+  string release = 2;
+  // Which tenancy driver sees this tenant, e.g. "helm" or "pulumi".
+  string backend = 3;
+  // The tier label value of the namespace, e.g. "emp" or "ci".
+  string tier = 4;
+  // When the tenant was last active (install/upgrade/extend/test run).
+  google.protobuf.Timestamp last_activity = 5;
+  // Age since last activity, as computed by the server at response time.
+  google.protobuf.Duration age = 6;
+  // Effective TTL: the tenant's own ttl label, or its tier default.
+  google.protobuf.Duration ttl = 7;
+  // Absolute hold from the keep-until label; unset when not held.
+  google.protobuf.Timestamp keep_until = 8;
+  // The execution id of the test run that last touched this tenant.
+  string execution_id = 9;
+  // What the housekeeping loop would do to this tenant next.
+  ActionKind pending_action = 10;
+}
+
+// ActionKind is the verb of a housekeeping action.
+enum ActionKind {
+  ACTION_KIND_UNSPECIFIED = 0;
+  // Nothing to do.
+  ACTION_KIND_NONE = 1;
+  // Uninstall an expired tenant (ring-pair aware: app before infra).
+  ACTION_KIND_TEARDOWN = 2;
+  // Remove an orphaned artifact whose tenant is gone and grace has passed.
+  ACTION_KIND_SWEEP = 3;
+}
+
+// PlannedAction is one thing housekeeping would do, with its justification.
+message PlannedAction {
+  ActionKind kind = 1;
+  // Tenant identity the action belongs to (the *former* tenant for sweeps).
+  string namespace = 2;
+  string release = 3;
+  // The precise object acted on, e.g. a release name, an object-store
+  // prefix, or a parameter-store subtree.
+  string target = 4;
+  // The rule that fired, machine-readable, e.g. "ttl-expired" or
+  // "orphaned-past-grace".
+  string rule = 5;
+  // Human-readable justification with the numbers in it.
+  string reason = 6;
+  // Earliest time the action may execute (grace still running when set).
+  google.protobuf.Timestamp not_before = 7;
+}
+
+message PlanRequest {
+  // Optional narrowing; empty plans everything in scope.
+  string namespace = 1;
+  string release = 2;
+}
+
+message PlanResponse {
+  repeated PlannedAction actions = 1;
+  // When the server computed this plan.
+  google.protobuf.Timestamp computed_at = 2;
+}
+
+message ListTenantsRequest {
+  // Optional narrowing by tier label value and/or namespace.
+  string tier = 1;
+  string namespace = 2;
+}
+
+message ListTenantsResponse {
+  repeated Tenant tenants = 1;
+}
+
+message CheckoutRequest {
+  string namespace = 1;
+  string release = 2;
+  // How long to hold the tenant; the server stamps keep-until = now + this,
+  // bounded by server-side policy.
+  google.protobuf.Duration duration = 3;
+}
+
+message CheckoutResponse {
+  Tenant tenant = 1;
+}
+
+message ExtendRequest {
+  string namespace = 1;
+  string release = 2;
+  // How far past now to move keep-until, bounded by server-side policy.
+  google.protobuf.Duration duration = 3;
+}
+
+message ExtendResponse {
+  Tenant tenant = 1;
+}
+
+message SweepRequest {
+  // Optional narrowing; empty sweeps everything the current plan names.
+  string namespace = 1;
+  // Force a dry run even on a server configured to execute. The reverse
+  // is impossible: a dry-run server never executes, whatever the request.
+  bool dry_run = 2;
+}
+
+// SweepResult is the structured deletion record for one action: what was
+// (or would have been) removed, and why.
+message SweepResult {
+  PlannedAction action = 1;
+  // True when the deletion actually happened; false on dry runs and errors.
+  bool executed = 2;
+  // Set when the action was attempted and failed.
+  string error = 3;
+}
+
+message SweepResponse {
+  repeated SweepResult results = 1;
+  bool dry_run = 2;
+}
+
+message ResolveRequest {
+  string email = 1;
+}
+
+message ResolveResponse {
+  // The short, stable identifier assigned to this person.
+  string slug = 1;
+  // The namespace their standing installations live in.
+  string namespace = 2;
+}

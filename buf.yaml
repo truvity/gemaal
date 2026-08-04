@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: proto
+    name: buf.build/truvity/gemaal
+# google/protobuf/* well-known types are bundled with buf — no deps needed.
+breaking:
+  use:
+    - FILE
+# STANDARD, not DEFAULT: buf ≥ 1.35 renamed the category (DEFAULT still
+# works but warns; this repo starts clean).
+lint:
+  use:
+    - STANDARD

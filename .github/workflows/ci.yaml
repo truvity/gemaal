@@ -1,0 +1,36 @@
+# Third-party actions are pinned to commit SHAs (exact version tag noted
+# inline) so this repo starts clean on the unpinned-actions CodeQL finding.
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # devbox.lock in the key: the go-build cache holds artifacts
+          # linked against nix store paths — a toolchain bump with a stale
+          # restored cache yields "fork/exec ...: no such file" in go test.
+          key: go-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-${{ hashFiles('devbox.lock') }}-
+
+      - name: Install devbox
+        run: curl -fsSL https://get.jetify.com/devbox | bash -s -- -f
+
+      - run: devbox run -- just check
