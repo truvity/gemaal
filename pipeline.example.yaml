@@ -1,0 +1,83 @@
+# gemaalctl pipeline — example per-project configuration (one project
+# per file, passed via --config / GEMAAL_PIPELINE_CONFIG).
+#
+# This instance is bar's url-shortener: the values mirror the release
+# scripts the pipeline commands were ported from
+# (bar/url-shortener/scripts/release-env.sh and friends). Nothing in the
+# flows is hardcoded to it — point the fields at any project with the
+# same two-ring chart shape.
+#
+# There are exactly two destinations, and each has exactly one
+# entrypoint: `pipeline snapshot` + `pipeline push-preview` build and
+# push preview, `pipeline release-stable` builds and pushes stable in
+# one gated run. Nothing selects a destination at run time — the
+# registry is baked into the ring3 chart at package time, and each build
+# stamps `.release-type` provenance so a push can refuse charts packaged
+# for the other registry.
+
+project: url-shortener
+
+# Defaults derived from `project` when omitted — spelled out here for
+# the full picture.
+projectDir: url-shortener
+distDir: dist/url-shortener
+goreleaserConfig: url-shortener/.goreleaser.yaml
+tagPrefix: url-shortener/
+releaseBranch: master
+
+awsRegion: eu-central-1
+
+registries:
+  preview:
+    registry: 677224894277.dkr.ecr.eu-central-1.amazonaws.com
+    profile: preview@power
+  stable:
+    registry: 721506300184.dkr.ecr.eu-central-1.amazonaws.com
+    profile: stable@power
+
+charts:
+  # OCI repository per chart: <repositoryPrefix>/<name>.
+  repositoryPrefix: url-shortener/charts
+  # ring2: the infra chart — installable, inert, referenced by nobody
+  # who does not also have ring3.
+  ring2:
+    name: url-shortener-infra
+    path: url-shortener/charts/url-shortener-infra
+    # file:// subcharts must be vendored (`helm dependency update`)
+    # before packaging — the helmctl CLI has no --vendor-dependencies
+    # flag yet.
+    vendorDependencies: true
+  # ring3: the app chart — the commit point that makes a version look
+  # released; its digest-pinned values are how consumers learn the
+  # image digests.
+  ring3:
+    name: url-shortener
+    path: url-shortener/charts/url-shortener
+
+commands:
+  goreleaser: [goreleaser]
+  helm: [helm]
+  helmctl: [go, tool, helmctl]
+  aws: [aws]
+  # release-stable ONLY, run AFTER the five gates pass and before
+  # goreleaser (gates that run after a build are not gates). The
+  # snapshot flow runs none: its caller's task deps produce any build
+  # inputs first.
+  preBuild:
+    - [moon, run, "url-shortener:build/app/web", "url-shortener:build/app/log"]
+
+lock:
+  # THE INVARIANT: the lockfile lives OUTSIDE every cleaned path.
+  # `goreleaser --clean` wipes distDir wholesale, and a lockfile whose
+  # inode is deleted mid-hold excludes nobody — so it sits NEXT TO the
+  # cleaned directory, never inside it (config validation refuses a
+  # lockfile under distDir).
+  file: dist/.url-shortener-charts.lock
+  timeout: 300s
+
+# Rebuild commands quoted in error messages — name whatever wraps
+# gemaalctl in the consuming repo (moon tasks, just recipes, or
+# gemaalctl itself).
+hints:
+  snapshot: gemaalctl pipeline snapshot
+  stable: gemaalctl pipeline release-stable
