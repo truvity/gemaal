@@ -61,12 +61,16 @@ func (s *stubRunner) joined() []string {
 }
 
 // clearTenantEnv neutralizes every environment rung of the resolution
-// ladders, so tests exercise exactly the rung they mean to — including
-// on a real CI runner where GITHUB_RUN_NUMBER is set for real.
+// ladders and the GEMAAL_TEST_* skip contract, so tests exercise
+// exactly the rung they mean to — including on a real CI runner where
+// GITHUB_RUN_NUMBER is set for real.
 func clearTenantEnv(t *testing.T) {
 	t.Helper()
 
-	for _, k := range []string{EnvNamespace, EnvRelease, EnvKubecontext, EnvCIRunNumber, EnvCIRunAttempt} {
+	for _, k := range []string{
+		EnvNamespace, EnvRelease, EnvKubecontext, EnvCIRunNumber, EnvCIRunAttempt,
+		EnvSkipBuild, EnvSkipDeploy, EnvSkipDestroy, EnvKeep,
+	} {
 		t.Setenv(k, "")
 	}
 }

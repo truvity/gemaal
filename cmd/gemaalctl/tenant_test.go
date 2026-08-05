@@ -15,9 +15,21 @@ import (
 	"github.com/truvity/gemaal/pkg/identity"
 )
 
-// cliStubRunner records helm/kubectl argv instead of executing.
+// cliStubRunner records helm/kubectl argv instead of executing. Rules
+// script the stdout of matched commands (prefix of the space-joined
+// argv); unmatched commands succeed with empty output.
 type cliStubRunner struct {
 	calls [][]string
+	rules map[string]string
+}
+
+// on scripts the output for commands whose argv starts with prefix.
+func (s *cliStubRunner) on(prefix, out string) {
+	if s.rules == nil {
+		s.rules = map[string]string{}
+	}
+
+	s.rules[prefix] = out
 }
 
 func (s *cliStubRunner) Run(_ context.Context, argv ...string) error {
@@ -28,6 +40,13 @@ func (s *cliStubRunner) Run(_ context.Context, argv ...string) error {
 
 func (s *cliStubRunner) Output(_ context.Context, argv ...string) (string, error) {
 	s.calls = append(s.calls, argv)
+
+	joined := strings.Join(argv, " ")
+	for prefix, out := range s.rules {
+		if strings.HasPrefix(joined, prefix) {
+			return out, nil
+		}
+	}
 
 	return "", nil
 }
@@ -112,6 +131,8 @@ func TestWhoamiResolvesTheFullChain(t *testing.T) {
 	clearTenantEnv(t)
 	t.Setenv(identity.EnvEmail, "j.doe@example.com")
 
+	stubTheRunner(t)
+
 	out, err := runCLI(t, "whoami", "--config", writeGemaalYAML(t), "--app", "myapp")
 	require.NoError(t, err)
 
@@ -119,7 +140,72 @@ func TestWhoamiResolvesTheFullChain(t *testing.T) {
 	assert.Contains(t, out, "email:     j.doe@example.com (env)")
 	assert.Contains(t, out, "slug:      jdoe")
 	assert.Contains(t, out, "namespace: emp-jdoe")
+	assert.Contains(t, out, "tier:      employee")
 	assert.Contains(t, out, "release:   myapp")
+}
+
+// writeGemaalYAMLNoIdentity writes a config WITHOUT an identity map —
+// the shape of a repo that commits no people data (bar#488).
+func writeGemaalYAMLNoIdentity(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "gemaal.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+clusters:
+  devel@oidc:
+    values:
+      region: eu-central-1
+`), 0o600))
+
+	return path
+}
+
+const whoamiGroupsJSON = `{"status":{"userInfo":{"username":"j.doe@example.com",` +
+	`"groups":["system:authenticated","emp:jdoe"]}}}`
+
+func TestWhoamiResolvesWithoutAnIdentityMap(t *testing.T) {
+	clearTenantEnv(t)
+	t.Setenv(identity.EnvEmail, "j.doe@example.com")
+
+	s := stubTheRunner(t)
+	s.on("kubectl --context devel@oidc auth whoami", whoamiGroupsJSON)
+
+	out, err := runCLI(t, "whoami", "--config", writeGemaalYAMLNoIdentity(t), "-c", "devel@oidc", "--app", "myapp")
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "slug:      jdoe", "the interim kubectl-groups resolver serves when no identity map is committed")
+	assert.Contains(t, out, "namespace: emp-jdoe")
+	assert.Contains(t, out, "tier:      employee")
+	assert.Contains(t, out, "release:   myapp")
+}
+
+func TestInstallResolvesWithoutAnIdentityMap(t *testing.T) {
+	clearTenantEnv(t)
+	t.Setenv(identity.EnvEmail, "j.doe@example.com")
+
+	s := stubTheRunner(t)
+	s.on("kubectl --context devel@oidc auth whoami", whoamiGroupsJSON)
+
+	_, err := runCLI(t, "install",
+		"--config", writeGemaalYAMLNoIdentity(t),
+		"-c", "devel@oidc",
+		"--app", "myapp",
+		"--chart", "app.tgz",
+	)
+	require.NoError(t, err)
+
+	installs := 0
+
+	for _, call := range s.joined() {
+		if strings.HasPrefix(call, "helm upgrade --install") {
+			installs++
+
+			assert.Contains(t, call, "--namespace emp-jdoe",
+				"the tenant namespace must come from the caller's own emp:{slug} token group")
+		}
+	}
+
+	assert.Equal(t, 1, installs)
 }
 
 func TestWhoamiPrintsHalvesIndependently(t *testing.T) {
@@ -132,7 +218,7 @@ func TestWhoamiPrintsHalvesIndependently(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, out, "email:     nobody@example.com (env)")
-	assert.Contains(t, out, "slug:      (unmapped")
+	assert.Contains(t, out, "slug:      (unresolved")
 	assert.Contains(t, out, "namespace: (unresolved")
 	assert.Contains(t, out, "release:   (unresolved")
 }

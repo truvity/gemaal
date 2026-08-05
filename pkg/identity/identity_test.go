@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -141,6 +142,110 @@ func TestKubectlDriverArgv(t *testing.T) {
 			assert.Equal(t, tt.want, s.calls[0])
 		})
 	}
+}
+
+func groupsJSON(groups ...string) string {
+	data, err := json.Marshal(map[string]any{
+		"kind": "SelfSubjectReview",
+		"status": map[string]any{
+			"userInfo": map[string]any{"username": "j.doe@example.com", "groups": groups},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return string(data)
+}
+
+func TestKubectlGroupsResolver(t *testing.T) {
+	tests := []struct {
+		name     string
+		out      string
+		err      error
+		resolver KubectlGroupsResolver
+		wantSlug string
+		wantErr  []string
+	}{
+		{
+			name:     "exactly one emp group",
+			out:      groupsJSON("system:authenticated", "emp:jdoe", "network:devel"),
+			wantSlug: "jdoe",
+		},
+		{
+			name:    "no emp group refuses with the override hint",
+			out:     groupsJSON("system:authenticated"),
+			wantErr: []string{"j.doe@example.com", "no emp:{slug} group", "GEMAAL_NAMESPACE"},
+		},
+		{
+			name:    "no groups at all refuses",
+			out:     `{"status":{"userInfo":{"username":"j.doe@example.com"}}}`,
+			wantErr: []string{"no emp:{slug} group"},
+		},
+		{
+			name:    "multiple emp groups are ambiguous, both named",
+			out:     groupsJSON("emp:jdoe", "emp:jsmith"),
+			wantErr: []string{"ambiguous", "jdoe", "jsmith", "GEMAAL_NAMESPACE"},
+		},
+		{
+			name:    "bare prefix is not a slug",
+			out:     groupsJSON("emp:"),
+			wantErr: []string{"no emp:{slug} group"},
+		},
+		{
+			name:     "prefix override resolves its own family only",
+			out:      groupsJSON("emp:jdoe", "dev:other"),
+			resolver: KubectlGroupsResolver{GroupPrefix: "dev:"},
+			wantSlug: "other",
+		},
+		{
+			name:    "kubectl failure is a hard error",
+			err:     errors.New("no such context"),
+			wantErr: []string{"kubectl auth whoami", "no such context"},
+		},
+		{
+			name:    "garbage output is a parse error",
+			out:     "not json",
+			wantErr: []string{"parse kubectl auth whoami"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &stubRunner{out: tt.out, err: tt.err}
+			tt.resolver.Runner = s
+
+			slug, err := tt.resolver.Resolve(context.Background(), "j.doe@example.com")
+
+			if len(tt.wantErr) > 0 {
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, ErrNoEvidence, "resolution was reached — its failures must be hard, never skippable")
+
+				for _, want := range tt.wantErr {
+					assert.Contains(t, err.Error(), want)
+				}
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSlug, slug)
+		})
+	}
+}
+
+func TestKubectlGroupsResolverArgv(t *testing.T) {
+	s := &stubRunner{out: groupsJSON("emp:jdoe")}
+	r := KubectlGroupsResolver{Kubecontext: "devel@oidc", Kubeconfig: "/tmp/kc", Runner: s}
+
+	slug, err := r.Resolve(context.Background(), "j.doe@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "jdoe", slug)
+	require.Len(t, s.calls, 1)
+	assert.Equal(t,
+		[]string{"kubectl", "--context", "devel@oidc", "--kubeconfig", "/tmp/kc", "auth", "whoami", "-o", "json"},
+		s.calls[0],
+		"the resolver must query the same whoami the evidence driver does")
 }
 
 func callerIdentityJSON(arn string) string {

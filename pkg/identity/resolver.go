@@ -7,10 +7,11 @@ import (
 )
 
 // Resolver maps an email to the slug the organization knows it by. The
-// interface is the seam: MapResolver serves a committed map today, and a
-// ConnectRPC client speaking the gemaal service's Resolve RPC (the
-// eventual authority, rendered from the personnel source) drops in
-// without the callers changing.
+// interface is the seam: MapResolver serves a committed map,
+// KubectlGroupsResolver is the sanctioned interim for deployments that
+// commit no people data, and a ConnectRPC client speaking the gemaal
+// service's Resolve RPC (the eventual authority, rendered from the
+// personnel source) drops in without the callers changing.
 type Resolver interface {
 	Resolve(ctx context.Context, email string) (slug string, err error)
 }

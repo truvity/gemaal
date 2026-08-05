@@ -14,6 +14,11 @@ import (
 	"github.com/truvity/gemaal/pkg/identity"
 )
 
+// failingRunner is an identity.Runner whose every command fails.
+type failingRunner struct{ err error }
+
+func (r failingRunner) Output(context.Context, ...string) (string, error) { return "", r.err }
+
 // explodingDriver is an identity driver that must never be reached.
 type explodingDriver struct{}
 
@@ -84,9 +89,12 @@ func TestResolveNamespaceLadder(t *testing.T) {
 			wantErr: "j.doe@example.com",
 		},
 		{
-			name:    "no resolver at all says where to put one",
-			opts:    Options{Chain: chain},
-			wantErr: "Options.Resolver",
+			name: "interim resolver breakage surfaces the kubectl error",
+			opts: Options{Chain: chain, IdentityRunner: failingRunner{errors.New("no such context")}},
+			// No explicit resolver, no identity map: the ladder falls
+			// through to the kubectl-groups resolver, whose failures are
+			// hard errors.
+			wantErr: "kubectl auth whoami",
 		},
 		{
 			name:    "template without the placeholder refuses",
@@ -225,40 +233,50 @@ func TestTenantString(t *testing.T) {
 	assert.Equal(t, "emp-jdoe/myapp", Tenant{Namespace: "emp-jdoe", Release: "myapp"}.String())
 }
 
-// fakeMain stands in for *testing.M.
-type fakeMain struct {
-	code int
-	ran  bool
+func TestSlugResolverLadder(t *testing.T) {
+	explicit := identity.MapResolver{"a@example.com": "a"}
+	withMap := &gemaalcfg.Config{Identity: gemaalcfg.Identity{Emails: map[string]string{"a@example.com": "a"}}}
+
+	t.Run("explicit resolver wins over the config map", func(t *testing.T) {
+		r, err := Options{Resolver: explicit, Config: withMap}.SlugResolver()
+		require.NoError(t, err)
+		assert.Equal(t, explicit, r)
+	})
+
+	t.Run("config map wins over the interim fallback", func(t *testing.T) {
+		r, err := Options{Config: withMap}.SlugResolver()
+		require.NoError(t, err)
+		assert.IsType(t, identity.MapResolver{}, r)
+	})
+
+	t.Run("interim kubectl-groups resolver is the last rung, fully threaded", func(t *testing.T) {
+		s := &stubRunner{}
+
+		r, err := Options{Kubecontext: "devel@oidc", Kubeconfig: "/tmp/kc", IdentityRunner: s}.SlugResolver()
+		require.NoError(t, err)
+
+		groups, ok := r.(identity.KubectlGroupsResolver)
+		require.True(t, ok, "no explicit resolver and no identity map must fall through to the interim resolver")
+		assert.Equal(t, "devel@oidc", groups.Kubecontext)
+		assert.Equal(t, "/tmp/kc", groups.Kubeconfig)
+		assert.Equal(t, s, groups.Runner)
+	})
 }
 
-func (m *fakeMain) Run() int {
-	m.ran = true
-
-	return m.code
-}
-
-func TestRunExportsAndPassesTheCodeThrough(t *testing.T) {
+func TestResolveNamespaceThroughInterimGroupsResolver(t *testing.T) {
 	clearTenantEnv(t)
 
-	m := &fakeMain{code: 3}
+	s := &stubRunner{}
+	s.on("kubectl --context devel@oidc auth whoami",
+		`{"status":{"userInfo":{"username":"j.doe@example.com","groups":["system:authenticated","emp:jdoe"]}}}`, nil)
 
-	code := Run(m, Options{Namespace: "emp-jdoe", Release: "myapp", Kubecontext: "devel@oidc"})
+	chain, _ := jdoe()
 
-	assert.Equal(t, 3, code)
-	assert.True(t, m.ran)
-	assert.Equal(t, "emp-jdoe", os.Getenv(EnvNamespace))
-	assert.Equal(t, "myapp", os.Getenv(EnvRelease))
-	assert.Equal(t, "devel@oidc", os.Getenv(EnvKubecontext))
-}
-
-func TestRunRefusesAnUnresolvableTenant(t *testing.T) {
-	clearTenantEnv(t)
-
-	m := &fakeMain{}
-
-	// A namespace but no release: resolution fails before the tests run.
-	code := Run(m, Options{Namespace: "emp-jdoe"})
-
-	assert.Equal(t, 1, code)
-	assert.False(t, m.ran, "the tests must not run inside an unresolved tenant")
+	ns, err := ResolveNamespace(context.Background(), Options{
+		Kubecontext:    "devel@oidc",
+		Chain:          chain,
+		IdentityRunner: s,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "emp-jdoe", ns, "no identity config anywhere — the slug comes from the caller's own token group")
 }
