@@ -2,6 +2,10 @@
 // and the ConnectRPC client commands (plan, checkout, extend). Tenant
 // resolution and install labeling arrive with G2 (the package move) — the
 // CLI deliberately carries no identity logic yet.
+//
+// The pipeline command group (snapshot, push-preview, release-stable) is
+// the promoted form of bar's url-shortener release scripts — see
+// pkg/pipeline.
 package main
 
 import (
@@ -20,6 +24,7 @@ import (
 
 	gemaalv1 "github.com/truvity/gemaal/gen/gemaal/v1"
 	"github.com/truvity/gemaal/gen/gemaal/v1/gemaalv1connect"
+	"github.com/truvity/gemaal/pkg/pipeline"
 )
 
 // Version is injected at release time by goreleaser's ldflags.
@@ -55,10 +60,34 @@ func serverFlag() *cli.StringFlag {
 	}
 }
 
+func pipelineConfigFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:     "config",
+		Usage:    "per-project pipeline configuration (YAML) — see pipeline.example.yaml",
+		Sources:  cli.EnvVars("GEMAAL_PIPELINE_CONFIG"),
+		Required: true,
+	}
+}
+
+// pipelineAction loads the per-project config and hands a wired Pipeline
+// to the flow.
+func pipelineAction(flow func(context.Context, *pipeline.Pipeline) error) cli.ActionFunc {
+	return func(ctx context.Context, cmd *cli.Command) error {
+		cfg, err := pipeline.Load(cmd.String("config"))
+		if err != nil {
+			return err
+		}
+
+		p := pipeline.New(cfg, pipeline.ExecRunner{}, slog.Default(), os.Stderr)
+
+		return flow(ctx, p)
+	}
+}
+
 func newCommand() *cli.Command {
 	return &cli.Command{
 		Name:    "gemaalctl",
-		Usage:   "talk to the gemaal service: plan, checkout, extend",
+		Usage:   "talk to the gemaal service: plan, checkout, extend — plus the artifact pipeline",
 		Version: Version,
 		Commands: []*cli.Command{
 			{
@@ -160,6 +189,39 @@ func newCommand() *cli.Command {
 						resp.Msg.GetTenant().GetKeepUntil().AsTime().Format(time.RFC3339))
 
 					return nil
+				},
+			},
+			{
+				Name:  "pipeline",
+				Usage: "artifact pipeline: dev-loop snapshot, preview chart push, gated stable release",
+				Commands: []*cli.Command{
+					{
+						Name: "snapshot",
+						Usage: "DEV LOOP build — preview registry only, no knobs, no gates; " +
+							"builds the working tree as-is (dirty/uncommitted included)",
+						Flags: []cli.Flag{pipelineConfigFlag()},
+						Action: pipelineAction(func(ctx context.Context, p *pipeline.Pipeline) error {
+							return p.Snapshot(ctx)
+						}),
+					},
+					{
+						Name: "push-preview",
+						Usage: "push the packaged ring charts to the PREVIEW registry — " +
+							"refuses charts not stamped 'preview' and incoherent ring pairs",
+						Flags: []cli.Flag{pipelineConfigFlag()},
+						Action: pipelineAction(func(ctx context.Context, p *pipeline.Pipeline) error {
+							return p.PushPreview(ctx)
+						}),
+					},
+					{
+						Name: "release-stable",
+						Usage: "STABLE RELEASE — five gates before any build or credential use, " +
+							"then build + push to the stable registry in one run",
+						Flags: []cli.Flag{pipelineConfigFlag()},
+						Action: pipelineAction(func(ctx context.Context, p *pipeline.Pipeline) error {
+							return p.ReleaseStable(ctx)
+						}),
+					},
 				},
 			},
 		},

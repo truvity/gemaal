@@ -32,6 +32,28 @@ func TestVersion(t *testing.T) {
 	require.NoError(t, newCommand().Run(context.Background(), []string{"gemaalctl", "version"}))
 }
 
+func TestPipelineHelp(t *testing.T) {
+	var out bytes.Buffer
+
+	cmd := newCommand()
+	cmd.Writer = &out
+
+	require.NoError(t, cmd.Run(context.Background(), []string{"gemaalctl", "pipeline", "--help"}))
+	assert.Contains(t, out.String(), "snapshot")
+	assert.Contains(t, out.String(), "push-preview")
+	assert.Contains(t, out.String(), "release-stable")
+}
+
+// TestPipelineRefusesBadConfig proves a flow never starts from an
+// unloadable per-project configuration.
+func TestPipelineRefusesBadConfig(t *testing.T) {
+	err := newCommand().Run(context.Background(), []string{
+		"gemaalctl", "pipeline", "snapshot", "--config", "/nonexistent/pipeline.yaml",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read pipeline config")
+}
+
 // startStubServer serves the G1 service skeleton for client smoke tests.
 func startStubServer(t *testing.T) string {
 	t.Helper()
