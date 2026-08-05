@@ -1,11 +1,13 @@
-// Command gemaalctl is the human/CI face of gemaal. G1 skeleton: version
-// and the ConnectRPC client commands (plan, checkout, extend). Tenant
-// resolution and install labeling arrive with G2 (the package move) — the
-// CLI deliberately carries no identity logic yet.
+// Command gemaalctl is the human/CI face of gemaal.
 //
-// The pipeline command group (snapshot, push-preview, release-stable) is
-// the promoted form of bar's url-shortener release scripts — see
-// pkg/pipeline.
+//   - whoami / install / uninstall: tenant resolution (identity evidence
+//     chain → email → slug → personal namespace; see pkg/identity and
+//     pkg/harness) and client-side helm installs stamped with the gemaal
+//     ledger labels. gemaal itself never installs anything — these run
+//     on the client, which is exactly the point.
+//   - plan / checkout / extend: ConnectRPC clients of the gemaal service.
+//   - pipeline (snapshot, push-preview, release-stable): the promoted
+//     form of bar's url-shortener release scripts — see pkg/pipeline.
 package main
 
 import (
@@ -87,7 +89,7 @@ func pipelineAction(flow func(context.Context, *pipeline.Pipeline) error) cli.Ac
 func newCommand() *cli.Command {
 	return &cli.Command{
 		Name:    "gemaalctl",
-		Usage:   "talk to the gemaal service: plan, checkout, extend — plus the artifact pipeline",
+		Usage:   "resolve the tenant, install with ledger labels, talk to the gemaal service — plus the artifact pipeline",
 		Version: Version,
 		Commands: []*cli.Command{
 			{
@@ -99,6 +101,9 @@ func newCommand() *cli.Command {
 					return nil
 				},
 			},
+			whoamiCommand(),
+			installCommand(),
+			uninstallCommand(),
 			{
 				Name:  "plan",
 				Usage: "ask the service what housekeeping would do right now (no side effects)",

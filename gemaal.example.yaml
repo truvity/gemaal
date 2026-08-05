@@ -1,0 +1,40 @@
+# gemaal.yaml — the committed per-repo configuration the client side
+# reads (pkg/gemaalcfg). The file is OPTIONAL: everything in it is a
+# default, and flags / GEMAAL_* env always win.
+
+# Template for the identity-derived standing namespace, rendered with
+# the resolved slug. {slug} is the only substitution. Default: emp-{slug}.
+personalNamespace: emp-{slug}
+
+# Per-cluster deploy inputs, keyed by KUBECONTEXT NAME — kubeconfig
+# stays the cluster registry, there is no name indirection. `values` is
+# opaque: gemaalctl install (and harness.ClusterValuesFile) hand it to
+# helm as .Values.gemaal, verbatim; the semantics live in the charts.
+clusters:
+  devel@oidc:
+    values:
+      region: eu-central-1
+      accountID: "123456789012"
+
+# Repo-owned commands gemaalctl runs (install --build) but never
+# interprets. The global hook is the fallback; projects override.
+hooks:
+  build: [moon, run, ':build']
+
+projects:
+  url-shortener:
+    hooks:
+      build: [moon, run, 'url-shortener:artifacts/snapshot']
+
+# The email→slug identity map — how a resolved email becomes the slug
+# the personal namespace derives from. EXACTLY ONE source:
+#
+#   emails: the map inline, or
+#   file:   a flat YAML document (email: slug) rendered from the
+#           personnel source; relative paths resolve against this file.
+#
+# The gemaal service's Resolve RPC becomes the authoritative source
+# later; the interface in pkg/identity is the seam it plugs into.
+identity:
+  emails:
+    j.doe@example.com: jdoe
