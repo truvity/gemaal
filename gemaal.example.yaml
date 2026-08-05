@@ -33,8 +33,12 @@ projects:
 #   file:   a flat YAML document (email: slug) rendered from the
 #           personnel source; relative paths resolve against this file.
 #
-# The gemaal service's Resolve RPC becomes the authoritative source
-# later; the interface in pkg/identity is the seam it plugs into.
+# The whole section is OPTIONAL: a repo that commits no people data
+# omits it, and resolution falls through to the interim kubectl-groups
+# resolver — the emp:{slug} group in the caller's own cluster token
+# (identity.KubectlGroupsResolver). The gemaal service's Resolve RPC
+# becomes the authoritative source later; the interface in pkg/identity
+# is the seam it plugs into.
 identity:
   emails:
     j.doe@example.com: jdoe

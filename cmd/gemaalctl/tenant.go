@@ -78,7 +78,9 @@ func tenantFlags() []cli.Flag {
 
 // tenantOptions builds the resolution input shared by the tenant
 // commands: flags (which already carry their GEMAAL_* env sources) over
-// gemaal.yaml.
+// gemaal.yaml. No identity map in the config is fine — the resolver
+// ladder (harness.Options.SlugResolver) falls through to the interim
+// kubectl-groups resolver, run through the CLI's injectable runner.
 func tenantOptions(cmd *cli.Command) (harness.Options, *gemaalcfg.Config, error) {
 	cfg, err := gemaalcfg.Load(cmd.String("config"))
 	if err != nil {
@@ -93,6 +95,7 @@ func tenantOptions(cmd *cli.Command) (harness.Options, *gemaalcfg.Config, error)
 		App:               cmd.String("app"),
 		PersonalNamespace: cmd.String("personal-namespace"),
 		Config:            cfg,
+		IdentityRunner:    newRunner(),
 	}, cfg, nil
 }
 
@@ -102,7 +105,7 @@ func whoamiCommand() *cli.Command {
 		Usage: "the identity evidence chain + the resolved tenant",
 		Flags: tenantFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			opts, cfg, err := tenantOptions(cmd)
+			opts, _, err := tenantOptions(cmd)
 			if err != nil {
 				return err
 			}
@@ -127,7 +130,7 @@ func whoamiCommand() *cli.Command {
 				say(w, "email:     (unresolved: %v)\n", resErr)
 			} else {
 				say(w, "email:     %s (%s)\n", res.Email, res.Driver)
-				printSlug(ctx, w, cfg, res.Email)
+				printSlug(ctx, w, opts, res.Email)
 
 				// Reuse the evidence already gathered: one chain walk, and
 				// the tenant printed below is exactly what install would use.
@@ -144,6 +147,7 @@ func whoamiCommand() *cli.Command {
 				say(w, "namespace: (unresolved: %v)\n", nsErr)
 			} else {
 				say(w, "namespace: %s\n", ns)
+				say(w, "tier:      %s\n", harness.TierForNamespace(ns))
 			}
 
 			if release, relErr := harness.ResolveRelease(opts); relErr != nil {
@@ -157,22 +161,24 @@ func whoamiCommand() *cli.Command {
 	}
 }
 
-// printSlug shows the email→slug mapping's view of the caller, without
-// failing whoami: an unmapped email is a finding, not a crash.
-func printSlug(ctx context.Context, w io.Writer, cfg *gemaalcfg.Config, email string) {
-	m, err := cfg.EmailSlugs()
-
-	switch {
-	case err != nil:
+// printSlug shows the resolver's view of the caller, without failing
+// whoami: an unmapped email is a finding, not a crash. The resolver is
+// the exact one install uses (harness.Options.SlugResolver): the
+// gemaal.yaml identity map when one is committed, else the interim
+// kubectl-groups resolver reading the caller's own emp:{slug} token
+// group — no identity config file required.
+func printSlug(ctx context.Context, w io.Writer, opts harness.Options, email string) {
+	resolver, err := opts.SlugResolver()
+	if err != nil {
 		say(w, "slug:      (identity map: %v)\n", err)
-	case m == nil:
-		say(w, "slug:      (no identity map in gemaal.yaml)\n")
-	default:
-		if slug, slugErr := identity.MapResolver(m).Resolve(ctx, email); slugErr != nil {
-			say(w, "slug:      (unmapped: %v)\n", slugErr)
-		} else {
-			say(w, "slug:      %s\n", slug)
-		}
+
+		return
+	}
+
+	if slug, slugErr := resolver.Resolve(ctx, email); slugErr != nil {
+		say(w, "slug:      (unresolved: %v)\n", slugErr)
+	} else {
+		say(w, "slug:      %s\n", slug)
 	}
 }
 

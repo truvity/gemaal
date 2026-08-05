@@ -1,12 +1,16 @@
-// Package harness resolves the STANDING tenant a test run belongs to
-// and gives tests the cluster-side helpers they need inside it:
-// client-side helm installs stamped with the gemaal ledger labels,
-// ring-pair ordering, rollout waits and Service ClusterIP resolution.
+// Package harness resolves the STANDING tenant a test run belongs to,
+// brackets the run with a suite's real phases (build, deploy, readiness,
+// teardown — see Run and Suite), and gives tests the cluster-side
+// helpers they need inside it: client-side helm installs stamped with
+// the gemaal ledger labels, ring-pair ordering, rollout waits and
+// Service ClusterIP resolution.
 //
-// Standing only, on purpose. The harness creates and deletes NOTHING —
-// no namespace lifecycle, no teardown. An engineer's tenant is their
-// personal namespace with the app's release; a CI run's tenant is a
-// per-repo namespace with a per-run release. Cleanup belongs to the
+// Standing only, on purpose. The harness creates and deletes NOTHING
+// itself — no namespace lifecycle, and the only teardown is the suite's
+// own optional hooks over its own releases (interim, until the gemaal
+// service's TTL housekeeping owns cleanup). An engineer's tenant is
+// their personal namespace with the app's release; a CI run's tenant is
+// a per-repo namespace with a per-run release. Cleanup belongs to the
 // gemaal service (TTL from last activity, keep-until, sweeps); the
 // ephemeral create-run-destroy mode of this harness's predecessor was
 // deliberately not ported.
@@ -67,10 +71,17 @@ type Options struct {
 	// — and for tests.
 	Chain identity.Chain
 
-	// Resolver overrides email→slug resolution (the seam a future
-	// service-backed Resolve client plugs into). When nil, the identity
-	// map from Config serves.
+	// Resolver overrides email→slug resolution outright (the seam a
+	// future service-backed Resolve client plugs into). When nil, the
+	// ladder in SlugResolver applies: the identity map from Config, else
+	// the interim kubectl-groups resolver.
 	Resolver identity.Resolver
+
+	// IdentityRunner executes kubectl for the interim groups resolver
+	// when the resolver ladder falls through to it (identity.ExecRunner
+	// when nil) — the injection seam CLI tests script kubectl through.
+	// Callers that set Resolver or a Config identity map never reach it.
+	IdentityRunner identity.Runner
 }
 
 // Resolve derives the tenant and touches nothing: no cluster call unless
@@ -142,7 +153,7 @@ func resolveNamespace(ctx context.Context, o Options) (string, error) {
 		return "", err
 	}
 
-	resolver, err := o.resolver()
+	resolver, err := o.SlugResolver()
 	if err != nil {
 		return "", err
 	}
@@ -155,9 +166,15 @@ func resolveNamespace(ctx context.Context, o Options) (string, error) {
 	return RenderNamespace(o.personalNamespace(), slug)
 }
 
-// resolver picks the slug source: the explicit override, else the
-// config's identity map.
-func (o Options) resolver() (identity.Resolver, error) {
+// SlugResolver returns the email→slug resolver the namespace ladder
+// uses, in override order: Options.Resolver, else the gemaal.yaml
+// identity map from Config, else the interim kubectl-groups resolver
+// (identity.KubectlGroupsResolver — the emp:{slug} group in the
+// caller's own cluster token; the sanctioned stand-in until the gemaal
+// service's Resolve RPC, which stays the end state). Exported so
+// gemaalctl whoami prints the slug through the exact resolver install
+// uses — one path, no drift.
+func (o Options) SlugResolver() (identity.Resolver, error) {
 	if o.Resolver != nil {
 		return o.Resolver, nil
 	}
@@ -173,8 +190,11 @@ func (o Options) resolver() (identity.Resolver, error) {
 		}
 	}
 
-	return nil, fmt.Errorf(
-		"no slug resolver: set Options.Resolver, or give Options.Config a gemaal.yaml identity map (identity.emails or identity.file)")
+	return identity.KubectlGroupsResolver{
+		Kubecontext: o.Kubecontext,
+		Kubeconfig:  o.Kubeconfig,
+		Runner:      o.IdentityRunner,
+	}, nil
 }
 
 func (o Options) personalNamespace() string {
@@ -237,41 +257,4 @@ func RenderNamespace(template, slug string) (string, error) {
 	}
 
 	return strings.ReplaceAll(template, "{slug}", slug), nil
-}
-
-// TestMain is the subset of *testing.M this package needs — an interface
-// so the harness is testable without a real test binary.
-type TestMain interface{ Run() int }
-
-// Run is the TestMain entry point: resolve the standing tenant, export
-// the GEMAAL_* contract, run the tests. Nothing is created and nothing
-// is torn down — installs are the caller's own client-side helm (see
-// Cluster), cleanup is the gemaal service's job.
-//
-//	func TestMain(m *testing.M) {
-//	    cfg, err := gemaalcfg.Load("../gemaal.yaml")
-//	    if err != nil { ... }
-//	    os.Exit(harness.Run(m, harness.Options{
-//	        Kubecontext: "devel@oidc",
-//	        App:         "url-shortener",
-//	        Config:      cfg,
-//	    }))
-//	}
-func Run(m TestMain, o Options) int {
-	tenant, err := Resolve(context.Background(), o)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "harness: %v\n", err)
-
-		return 1
-	}
-
-	if err := tenant.Export(o.Kubecontext); err != nil {
-		fmt.Fprintf(os.Stderr, "harness: %v\n", err)
-
-		return 1
-	}
-
-	fmt.Fprintf(os.Stderr, "harness: standing tenant %s\n", tenant)
-
-	return m.Run()
 }

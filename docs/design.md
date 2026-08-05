@@ -178,9 +178,26 @@ two:
   namespace`. Its mapping is rendered from the same personnel source
   that feeds cluster RBAC, so there is exactly one place where "who is
   this" is decided — clients present evidence, they never carry the
-  mapping. (Until a deployment runs the service, the same rendered
-  email→slug map can be committed client-side — the resolver interface
-  is the seam the RPC client later plugs into.)
+  mapping.
+
+Until a deployment runs the service, the resolver interface is the seam
+two stand-ins plug into, in override order:
+
+1. **A committed email→slug map** (the `gemaal.yaml` identity section) —
+   the same rendered mapping, checked in, for repos that accept carrying
+   a copy of it.
+2. **The kubectl-groups resolver — the sanctioned INTERIM for repos that
+   commit no people data.** Stateless: it asks the cluster itself
+   (`kubectl auth whoami -o json`) and reads the slug out of the
+   caller's own prefixed token group (`emp:{slug}`; the prefix is
+   configurable). The group claim is rendered from the same personnel
+   source the service will read, so the answer is the authority's — just
+   fetched through the caller's own token instead of an RPC. CI never
+   reaches it: `GEMAAL_NAMESPACE` wins the namespace ladder outright.
+
+The service's Resolve RPC stays the end state; when it ships, the RPC
+client replaces these rungs behind the same interface — a staged
+retirement, callers untouched.
 
 ## The client side
 
@@ -205,12 +222,33 @@ re-exported as `GEMAAL_NAMESPACE` / `GEMAAL_RELEASE` /
 `GEMAAL_KUBECONTEXT` — the variables are bidirectional: read as
 overrides, always written back with the resolved values.
 
-**Standing tenants only.** The harness creates and deletes NOTHING — no
-namespace lifecycle, no teardown hook. A test run resolves its standing
+**Standing tenants only.** The harness itself creates and deletes
+NOTHING — no namespace lifecycle. A test run resolves its standing
 tenant, runs inside it, and leaves; re-runs are the normal case
 (execution-id filtering, tolerant assertions), and draining what nobody
 uses anymore is the service's job, not the test's. The predecessor's
 ephemeral create-run-destroy mode was deliberately not carried over.
+(A suite MAY declare its own teardown hooks over its own releases — the
+sanctioned interim until a deployment runs the service's TTL
+housekeeping, at which point leaving the pair standing becomes the
+default and the hooks retire.)
+
+**A suite is phases around `m.Run()`.** Real integration suites do not
+just resolve and run: they build artifacts, install them, wait for
+rollouts and resolve service URLs first — and tear their releases down
+after. The library owns that bracket (`harness.Run` over a `Suite`:
+`Build` → `Deploy` → `Setup` → tests → `Teardown`) together with the
+operator's `GEMAAL_TEST_*` skip contract: `SKIP_BUILD` reuses the
+artifacts lying around, `SKIP_DEPLOY` reuses the standing releases as
+installed (and implies `SKIP_BUILD`), `SKIP_DESTROY`/`KEEP` keep the
+releases afterwards. `Setup` is never skipped — a reused install still
+has to be ready. The flags parse strictly: a set-but-unparseable value
+refuses the run rather than, say, misreading "keep" and destroying what
+it was told to preserve. Teardown registers before anything installs
+(partial installs are torn down too), runs under its own context (a
+canceled run still cleans up), and its failures are reported without
+overriding the test verdict — what a failed teardown leaves behind is a
+standing tenant, which is exactly what the pump exists to drain.
 
 **Installs stamp the ledger.** The install helpers run
 `helm upgrade --install` client-side (helm ≥ 3.13, for `--labels` on
@@ -219,6 +257,16 @@ under the configured label domain, installing ring pairs in order
 (`<release>-infra` first) and uninstalling in reverse. Per-cluster
 values from the committed `gemaal.yaml` ride along as `.Values.gemaal`,
 opaque to the tooling — organization semantics live in the charts.
+
+Charts reading `.Values.gemaal` is a **consumer-side migration**, not
+something the tooling can force: a chart whose values contract predates
+gemaal keeps it, and the suite maps the cluster values onto that
+contract by hand (bar does exactly this today — friction #3 of the
+adoption feedback, accepted for now). The client-side tier helper
+(`TierForNamespace`: `emp-` → employee, `ci-` → ci, else unknown)
+exists for the same reason — it is the one rule such mapping code kept
+re-implementing. It is a client convenience only: on the service side
+the tier LABEL stays the machine selector, never the name prefix.
 
 ## Safety rails
 

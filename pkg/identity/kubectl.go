@@ -32,18 +32,7 @@ func (KubectlDriver) Name() string { return "kubectl" }
 // chain try the next driver. Output that cannot be parsed is breakage
 // and fails the chain.
 func (d KubectlDriver) Email(ctx context.Context) (string, error) {
-	argv := []string{"kubectl"}
-	if d.Kubecontext != "" {
-		argv = append(argv, "--context", d.Kubecontext)
-	}
-
-	if d.Kubeconfig != "" {
-		argv = append(argv, "--kubeconfig", d.Kubeconfig)
-	}
-
-	argv = append(argv, "auth", "whoami", "-o", "json")
-
-	out, err := runner(d.Runner).Output(ctx, argv...)
+	out, err := runner(d.Runner).Output(ctx, whoAmIArgs(d.Kubecontext, d.Kubeconfig)...)
 	if err != nil {
 		return "", fmt.Errorf("%w (%v)", ErrNoEvidence, err)
 	}
@@ -51,11 +40,29 @@ func (d KubectlDriver) Email(ctx context.Context) (string, error) {
 	return emailFromWhoAmI([]byte(out))
 }
 
+// whoAmIArgs builds the `kubectl auth whoami -o json` argv — shared by
+// the evidence driver (username) and the interim groups resolver
+// (groups), so the two views of the same SelfSubjectReview can never
+// query it differently.
+func whoAmIArgs(kubecontext, kubeconfig string) []string {
+	argv := []string{"kubectl"}
+	if kubecontext != "" {
+		argv = append(argv, "--context", kubecontext)
+	}
+
+	if kubeconfig != "" {
+		argv = append(argv, "--kubeconfig", kubeconfig)
+	}
+
+	return append(argv, "auth", "whoami", "-o", "json")
+}
+
 // selfSubjectReview is the JSON shape of `kubectl auth whoami -o json`.
 type selfSubjectReview struct {
 	Status struct {
 		UserInfo struct {
-			Username string `json:"username"`
+			Username string   `json:"username"`
+			Groups   []string `json:"groups"`
 		} `json:"userInfo"`
 	} `json:"status"`
 }
