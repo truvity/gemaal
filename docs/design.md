@@ -169,12 +169,56 @@ two:
 - **Client-side evidence drivers** extract an **email** from the
   environment, nothing more: `kubectl` (the authenticated username from
   `kubectl auth whoami`), `aws` (the SSO role session name), `env` (an
-  explicit variable — always wins; what CI sets).
+  explicit variable — always wins; what CI sets). The drivers chain
+  with clear precedence: env, then kubectl, then aws; the first email
+  wins, a driver with nothing to say is skipped with a recorded reason,
+  and a *broken* driver (or a malformed explicit override) stops the
+  chain instead of handing the answer to the next one.
 - **The service is the resolution authority**: `Resolve(email) → slug,
   namespace`. Its mapping is rendered from the same personnel source
   that feeds cluster RBAC, so there is exactly one place where "who is
   this" is decided — clients present evidence, they never carry the
-  mapping.
+  mapping. (Until a deployment runs the service, the same rendered
+  email→slug map can be committed client-side — the resolver interface
+  is the seam the RPC client later plugs into.)
+
+## The client side
+
+The library and CLI are the half of the contract that *creates* what
+the service watches. Three rules keep the two halves honest:
+
+**One resolution path.** Tests, `gemaalctl whoami` and
+`gemaalctl install` resolve the tenant through the same ladders, so
+their answers cannot drift:
+
+```
+namespace: explicit option → GEMAAL_NAMESPACE →
+           identity chain → email → slug → personal-namespace template
+release:   explicit option → GEMAAL_RELEASE →
+           CI (r{run}-a{attempt}) → the application name
+```
+
+Both halves are bounds-asserted at resolution time (63 characters and
+RFC1123 shape for the namespace, Helm's 53 for the release — including
+the derived `<release>-infra` companion). The resolved pair is
+re-exported as `GEMAAL_NAMESPACE` / `GEMAAL_RELEASE` /
+`GEMAAL_KUBECONTEXT` — the variables are bidirectional: read as
+overrides, always written back with the resolved values.
+
+**Standing tenants only.** The harness creates and deletes NOTHING — no
+namespace lifecycle, no teardown hook. A test run resolves its standing
+tenant, runs inside it, and leaves; re-runs are the normal case
+(execution-id filtering, tolerant assertions), and draining what nobody
+uses anymore is the service's job, not the test's. The predecessor's
+ephemeral create-run-destroy mode was deliberately not carried over.
+
+**Installs stamp the ledger.** The install helpers run
+`helm upgrade --install` client-side (helm ≥ 3.13, for `--labels` on
+the release Secret), stamping `ttl` / `keep-until` / `execution-id`
+under the configured label domain, installing ring pairs in order
+(`<release>-infra` first) and uninstalling in reverse. Per-cluster
+values from the committed `gemaal.yaml` ride along as `.Values.gemaal`,
+opaque to the tooling — organization semantics live in the charts.
 
 ## Safety rails
 
