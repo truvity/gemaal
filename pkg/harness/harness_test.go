@@ -249,14 +249,52 @@ func TestSlugResolverLadder(t *testing.T) {
 		assert.IsType(t, identity.MapResolver{}, r)
 	})
 
+	t.Run("config map wins over a configured server", func(t *testing.T) {
+		clearTenantEnv(t)
+
+		both := &gemaalcfg.Config{
+			Identity: gemaalcfg.Identity{Emails: map[string]string{"a@example.com": "a"}},
+			Server:   "http://gemaal.example:8080",
+		}
+
+		r, err := Options{Config: both}.SlugResolver()
+		require.NoError(t, err)
+		assert.IsType(t, identity.MapResolver{}, r, "a committed map is closer to the caller than the service")
+	})
+
+	t.Run("gemaal.yaml server yields the RPC rung ahead of the interim fallback", func(t *testing.T) {
+		clearTenantEnv(t)
+
+		r, err := Options{Config: &gemaalcfg.Config{Server: "http://gemaal.example:8080"}}.SlugResolver()
+		require.NoError(t, err)
+
+		client, ok := r.(identity.ResolveClient)
+		require.True(t, ok, "a configured server must resolve through the service, not the token groups")
+		assert.Equal(t, "http://gemaal.example:8080", client.Server)
+	})
+
+	t.Run("GEMAAL_SERVER overrides the config server", func(t *testing.T) {
+		clearTenantEnv(t)
+		t.Setenv(EnvServer, "http://elsewhere.example:8080")
+
+		r, err := Options{Config: &gemaalcfg.Config{Server: "http://gemaal.example:8080"}}.SlugResolver()
+		require.NoError(t, err)
+
+		client, ok := r.(identity.ResolveClient)
+		require.True(t, ok)
+		assert.Equal(t, "http://elsewhere.example:8080", client.Server)
+	})
+
 	t.Run("interim kubectl-groups resolver is the last rung, fully threaded", func(t *testing.T) {
+		clearTenantEnv(t)
+
 		s := &stubRunner{}
 
 		r, err := Options{Kubecontext: "devel@oidc", Kubeconfig: "/tmp/kc", IdentityRunner: s}.SlugResolver()
 		require.NoError(t, err)
 
 		groups, ok := r.(identity.KubectlGroupsResolver)
-		require.True(t, ok, "no explicit resolver and no identity map must fall through to the interim resolver")
+		require.True(t, ok, "no explicit resolver, no identity map, no server must fall through to the interim resolver")
 		assert.Equal(t, "devel@oidc", groups.Kubecontext)
 		assert.Equal(t, "/tmp/kc", groups.Kubeconfig)
 		assert.Equal(t, s, groups.Runner)

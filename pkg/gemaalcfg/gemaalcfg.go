@@ -62,6 +62,13 @@ type Config struct {
 	// Identity carries the email→slug map, or points at where it lives.
 	Identity Identity `yaml:"identity"`
 
+	// Server is the base URL of a deployed gemaal service, e.g.
+	// "http://gemaal.gemaal-system.svc:8080" — scheme included. When set
+	// (and no identity map is committed) resolution asks the service's
+	// Resolve RPC instead of falling back to the interim kubectl-groups
+	// resolver. Overridable by GEMAAL_SERVER, like everything here.
+	Server string `yaml:"server"`
+
 	// dir is the directory the config was loaded from; relative
 	// identity.file paths resolve against it.
 	dir string
@@ -151,6 +158,10 @@ func (c *Config) validate() error {
 
 	if len(c.Identity.Emails) > 0 && c.Identity.File != "" {
 		return errors.New("identity: emails and file are both set — the map must have exactly one source")
+	}
+
+	if c.Server != "" && !strings.HasPrefix(c.Server, "http://") && !strings.HasPrefix(c.Server, "https://") {
+		return fmt.Errorf("server %q must be a base URL with an http:// or https:// scheme", c.Server)
 	}
 
 	return validateEmailSlugs(c.Identity.Emails, "identity.emails")

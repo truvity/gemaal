@@ -26,6 +26,7 @@ projects:
 identity:
   emails:
     j.doe@example.com: jdoe
+server: http://gemaal.gemaal-system.svc:8080
 `
 
 func TestParseFull(t *testing.T) {
@@ -37,6 +38,7 @@ func TestParseFull(t *testing.T) {
 	assert.Equal(t, map[string]any{"flag": true}, cfg.Clusters["devel@oidc"].Values["nested"])
 	assert.Equal(t, []string{"moon", "run", ":build"}, cfg.Hooks.Build)
 	assert.Equal(t, map[string]string{"j.doe@example.com": "jdoe"}, cfg.Identity.Emails)
+	assert.Equal(t, "http://gemaal.gemaal-system.svc:8080", cfg.Server)
 }
 
 func TestParseEmpty(t *testing.T) {
@@ -78,6 +80,11 @@ func TestParseValidation(t *testing.T) {
 			name:    "unknown field is a typo",
 			yaml:    "personalNamespac: emp-{slug}",
 			wantErr: "personalNamespac",
+		},
+		{
+			name:    "server without a scheme",
+			yaml:    "server: gemaal.gemaal-system.svc:8080",
+			wantErr: "http:// or https:// scheme",
 		},
 	}
 
