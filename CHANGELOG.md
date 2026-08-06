@@ -3,6 +3,24 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.3.x
+- **0.3.0 (unreleased)** — G3 service v1: `pkg/engine` (the housekeeping
+  engine — the bar#486 janitor prototype ported to the label-ledger
+  model: plan/apply split, exec helm/kubectl ports, uniform TTL from
+  last activity with keep-until precedence, tier selection by namespace
+  LABEL, ring-ordered teardown, SSM orphan sweep, S3 stubbed off pending
+  the bucket, re-authorization of every action, structured deletion
+  records + bounded history); `pkg/authn` (TokenReview via the k8s API —
+  no client-go — chained with gateway-forwarded JWT claims, failing
+  closed); the six RPCs implemented (Checkout/Extend stamp keep-until by
+  patching the release Secrets' labels, owner-or-admin; Sweep
+  admin-only, server dry-run wins; Resolve from the deployer-rendered
+  map); `pkg/panel` (roster-stack console: tenants + sweep history,
+  CSP-hardened, no scripts, stateless same-origin guard);
+  `charts/gemaal` (config from values, `confirm: false` = shadow mode,
+  watcher RBAC split from off-by-default sweep RBAC). Shadow mode is the
+  default everywhere: a fresh deployment plans and deletes nothing.
+
 ## 0.2.x
 - **0.2.0 (unreleased)** — API-friction pass from bar's adoption
   (bar#488): `identity.KubectlGroupsResolver` promoted from bar's

@@ -3,7 +3,8 @@
 # One document, validated at startup. It says what this instance watches
 # and what it may ever touch: anything not allow-listed here is
 # structurally out of reach. Deployment-specific values (real buckets,
-# real roots, tier numbers) belong to the deployer, not this repo.
+# real roots, tier numbers, the identity map) belong to the deployer,
+# not this repo.
 
 listen: :8080
 
@@ -12,7 +13,7 @@ listen: :8080
 labelDomain: gemaal.io
 
 # Plan-only until someone deliberately flips this: the service computes
-# and reports, and deletes nothing.
+# and reports, and deletes nothing. This is shadow mode.
 dryRun: true
 
 # How often the housekeeping loop ticks.
@@ -21,19 +22,57 @@ housekeepingInterval: 1m
 # An orphaned artifact younger than this is left alone.
 grace: 48h
 
-# Tier defaults, keyed by the tier label value. A release without an
+# Kubeconfig context to act against; empty = the ambient (in-cluster)
+# configuration, which is the normal deployment.
+kubecontext: ""
+
+# The namespace label whose VALUE selects the tier. A namespace without
+# it does not exist as far as gemaal is concerned — which is exactly how
+# gemaal-system and every platform namespace stay out of reach.
+tierLabel: tenancy.truvity.io/tier
+
+# Tier defaults, keyed by the tier label VALUE. A tenant without an
 # explicit ttl label inherits its tier's default. Tiers differ only in
 # numbers — one mechanism, no special cases.
 tiers:
-  emp:
+  employee:
     ttl: 14h
   ci:
     ttl: 24h
 
 # The only places sweeps may ever touch. Roots, not patterns.
 allowList:
+  # Buckets must carry a "test" segment. NOTE: the S3 sweep is stubbed
+  # off in this build (no client wired, pending the shared test bucket);
+  # a configured bucket shows up in every plan as a problem, on purpose.
   s3Buckets: []
   # Parameter-store roots must live under /test/ — configuration that is
   # not test-shaped refuses to load, and /secrets is refused outright.
   ssmRoots:
     - /test/
+
+# The resolution authority's data: the deployer renders the email→slug
+# map from the same personnel source that feeds cluster RBAC.
+identity:
+  personalNamespace: emp-{slug}
+  emails:
+    j.doe@example.com: jdoe
+
+# Authorization for the mutating RPCs. Checkout/Extend need the caller
+# to own the namespace (their emp:{slug} group or resolved email renders
+# to it) or an admin group; Sweep is admin-only. No admin groups means
+# nobody can Sweep — the safe default.
+authz:
+  adminGroups: []
+  groupPrefix: "emp:"
+  groupsClaim: groups
+  tokenAudiences: []
+
+# Bounds for the Checkout/Extend keep-until stamps.
+hold:
+  default: 8h
+  max: 168h
+
+# AWS region for the SSM client; empty defers to the environment
+# (AWS_REGION, as pod identity injects it).
+awsRegion: ""

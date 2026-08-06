@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/truvity/gemaal/pkg/config"
+	"github.com/truvity/gemaal/pkg/engine"
 	"github.com/truvity/gemaal/pkg/service"
 )
 
@@ -54,14 +56,34 @@ func TestPipelineRefusesBadConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "read pipeline config")
 }
 
-// startStubServer serves the G1 service skeleton for client smoke tests.
+// emptyKeeper is a Housekeeper over an empty cluster, for client smoke
+// tests against a real server.
+type emptyKeeper struct{}
+
+func (emptyKeeper) View(context.Context) (*engine.View, error) { return &engine.View{}, nil }
+
+func (emptyKeeper) Plan(context.Context, engine.Narrow) (*engine.Plan, error) {
+	return &engine.Plan{}, nil
+}
+
+func (emptyKeeper) Apply(context.Context, *engine.Plan, bool, string) (*engine.SweepRecord, error) {
+	return &engine.SweepRecord{}, nil
+}
+
+func (emptyKeeper) StampKeepUntil(context.Context, engine.Tenant, time.Time) error { return nil }
+
+// startStubServer serves the service over an empty cluster.
 func startStubServer(t *testing.T) string {
 	t.Helper()
 
 	cfg, err := config.Parse([]byte("{}"))
 	require.NoError(t, err)
 
-	svc := service.New(cfg, slog.New(slog.DiscardHandler))
+	svc := service.New(service.Deps{
+		Config: cfg,
+		Logger: slog.New(slog.DiscardHandler),
+		Keeper: emptyKeeper{},
+	})
 
 	mux := http.NewServeMux()
 	path, handler := svc.Handler()
@@ -80,12 +102,14 @@ func TestPlanAgainstStubServer(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCheckoutIsUnimplementedInG1(t *testing.T) {
+func TestCheckoutWithoutCredentialsIsUnauthenticated(t *testing.T) {
+	// gemaalctl sends no Authorization yet; the mutating RPC must refuse
+	// rather than act for an anonymous caller.
 	url := startStubServer(t)
 
 	err := newCommand().Run(context.Background(), []string{
 		"gemaalctl", "checkout", "--server", url, "--namespace", "emp-jdoe", "--release", "myapp",
 	})
 	require.Error(t, err)
-	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }

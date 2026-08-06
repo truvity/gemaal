@@ -140,7 +140,7 @@ func newCommand() *cli.Command {
 			},
 			{
 				Name:  "checkout",
-				Usage: "claim a tenant slot, stamping keep-until (stub until G3 lands server-side)",
+				Usage: "claim a tenant slot, stamping keep-until",
 				Flags: []cli.Flag{
 					serverFlag(),
 					&cli.StringFlag{Name: "namespace", Usage: "tenant namespace", Required: true},
@@ -169,7 +169,7 @@ func newCommand() *cli.Command {
 			},
 			{
 				Name:  "extend",
-				Usage: "push a tenant's keep-until forward (stub until G3 lands server-side)",
+				Usage: "push a tenant's keep-until forward",
 				Flags: []cli.Flag{
 					serverFlag(),
 					&cli.StringFlag{Name: "namespace", Usage: "tenant namespace", Required: true},

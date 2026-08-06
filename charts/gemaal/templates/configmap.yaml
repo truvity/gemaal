@@ -1,0 +1,13 @@
+# The service configuration. dryRun is rendered from `confirm` — the
+# one deliberate flip — so a values file cannot half-say it: absent
+# confirm means dryRun: true means shadow mode.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gemaal.fullname" . }}-config
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    dryRun: {{ not .Values.confirm }}
+    {{- toYaml .Values.config | nindent 4 }}

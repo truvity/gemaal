@@ -1,0 +1,99 @@
+# gemaal chart values.
+#
+# The deployer (an ArgoCD Application row, or a plain `helm install`)
+# feeds everything cluster-specific through here: the tier TTLs, the
+# allow-list, the identity map, and — the one deliberate flip — confirm.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/truvity/gemaal
+  tag: ""  # defaults to appVersion
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  # The pod-identity association binds this exact (namespace, name)
+  # pair; the deployer pins it ("gemaal" on the reference deployment).
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  # The HTTPRoute in front of the panel targets this port by number.
+  port: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+
+# Browser exposure is GATEWAY-OWNED (Envoy SecurityPolicy OIDC — the
+# expose-a-ui pattern): the gateway, HTTPRoute, OIDC client and claim
+# authorization live with the deployer. The chart only publishes the
+# Service the route targets; these values exist so a deployment's
+# values file documents the hostname next to the app.
+exposure:
+  enabled: false
+  hostname: ""
+
+rbac:
+  # The read set the watcher always needs: namespaces (tier selection),
+  # secrets (helm release truth + the label ledger, incl. the keep-until
+  # patch), TokenReview (authenticating workload callers).
+  create: true
+  # Sweeping needs what `helm uninstall` needs: delete rights on
+  # whatever the watched charts installed — unbounded in general, so it
+  # is a wildcard and it is OFF by default. Shadow mode (confirm=false)
+  # never deletes and does not need it; flip this together with confirm.
+  sweep:
+    enabled: false
+
+networkPolicy:
+  # Egress-only: DNS plus TLS (the API server and AWS SSM). Ingress
+  # rules (from the gateway fleet) are deployer-owned and live next to
+  # the exposure.
+  enabled: true
+
+# Flipping confirm=true takes the service out of shadow mode: the
+# housekeeping loop and the Sweep RPC EXECUTE deletions instead of
+# reporting them. Renders as `dryRun: <not confirm>` in the config —
+# keep `config` itself free of a dryRun key.
+confirm: false
+
+# The service configuration document (config.example.yaml documents the
+# schema). Rendered verbatim into the ConfigMap under the dryRun line.
+config:
+  labelDomain: gemaal.io
+  housekeepingInterval: 1m
+  grace: 48h
+  tierLabel: tenancy.truvity.io/tier
+  # Tier defaults, keyed by the tier label VALUE. Deployment values
+  # override with the real numbers.
+  tiers:
+    employee:
+      ttl: 14h
+    ci:
+      ttl: 24h
+  allowList:
+    s3Buckets: []
+    ssmRoots:
+      - /test/
+  # The deployer renders the email→slug map from the personnel source.
+  identity:
+    personalNamespace: emp-{slug}
+    emails: {}
+  authz:
+    adminGroups: []
+    groupPrefix: "emp:"
+    groupsClaim: groups
+    tokenAudiences: []
+  hold:
+    default: 8h
+    max: 168h

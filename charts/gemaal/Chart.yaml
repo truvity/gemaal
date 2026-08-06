@@ -1,0 +1,10 @@
+apiVersion: v2
+name: gemaal
+description: >-
+  The pump behind a shared test cluster: watches, ages, and drains unused
+  test installations. Watcher, not deployer — see docs/design.md.
+type: application
+# Placeholder. The git tag is the sole version authority — the release
+# workflow stamps `--version`/`--app-version` from it at package time.
+version: 0.0.0
+appVersion: "0.0.0"
