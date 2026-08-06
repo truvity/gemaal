@@ -22,6 +22,13 @@ type (
 		Name      string
 		Updated   time.Time
 		Status    string
+
+		// UpdatedProblem records an "updated" timestamp that refused to
+		// parse; Updated is zero then. The age is the only thing standing
+		// between a release and a TTL deletion, so an unreadable age
+		// HOLDS the tenant — never "assume it is old" — and must not
+		// stall planning for the rest of the estate.
+		UpdatedProblem string
 	}
 
 	// ReleaseSecret is the newest release Secret of one release — the

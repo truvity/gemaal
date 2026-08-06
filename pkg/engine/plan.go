@@ -30,9 +30,10 @@ const (
 	KeepUntilHolds KeepReason = "keep-until-holds"
 	// KeepWithinGrace — an orphan that has not yet been idle long enough.
 	KeepWithinGrace KeepReason = "within-grace"
-	// KeepLedgerUnparseable — a ledger label refused to parse. The safe
-	// direction is a hold — never "assume it is old" — and the problem
-	// is recorded so an operator sees the broken stamp.
+	// KeepLedgerUnparseable — a ledger label or a release's "updated"
+	// timestamp refused to parse. The safe direction is a hold — never
+	// "assume it is old" — and the problem is recorded so an operator
+	// sees the broken stamp.
 	KeepLedgerUnparseable KeepReason = "ledger-unparseable"
 	// KeepOutOfReach — an artifact whose tenant namespace is not selected
 	// by the tier configuration. Reported, never deleted, so the
@@ -97,8 +98,9 @@ type (
 		// Ledger is the merged label state (app release wins over infra).
 		Ledger Ledger `json:"ledger" yaml:"ledger"`
 
-		// LedgerProblems records unparseable ledger labels. A tenant
-		// with any is HELD, never deleted.
+		// LedgerProblems records unparseable tenant state: ledger labels
+		// or a release's "updated" timestamp. A tenant with any is HELD,
+		// never deleted.
 		LedgerProblems []string `json:"ledger_problems,omitempty" yaml:"ledgerProblems,omitempty"`
 
 		// LastActivity is the newest last-deployed time across the ring:

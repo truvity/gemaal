@@ -27,7 +27,11 @@ type View struct {
 // Failure policy (a safety property, not an ergonomic one): namespace,
 // release and ledger listing failures are all FATAL. Orphanhood and
 // expiry are decided by this view, so an incomplete one would turn live
-// or held tenants into deletion candidates.
+// or held tenants into deletion candidates. Per-release parse failures
+// (a timestamp helm wrote in a layout we do not know) are NOT listing
+// failures: the release is present and attributable, so its tenant is
+// held with the problem recorded and the view carries on — one broken
+// stamp must not stall housekeeping for the whole estate.
 func (e *Engine) View(ctx context.Context) (*View, error) {
 	if e.Kube == nil || e.Helm == nil {
 		return nil, errors.New("engine: kube and helm clients are required — release truth is not optional")
@@ -148,6 +152,14 @@ func (e *Engine) namespaceTenants(ctx context.Context, ns Namespace) ([]TenantSt
 		for _, rel := range members {
 			if rel.Updated.After(state.LastActivity) {
 				state.LastActivity = rel.Updated
+			}
+
+			// A release whose "updated" stamp refused to parse holds the
+			// tenant the same way a broken ledger label does: unreadable
+			// age, no deletion, problem surfaced.
+			if rel.UpdatedProblem != "" {
+				state.LedgerProblems = append(state.LedgerProblems,
+					fmt.Sprintf("release %s: %s", rel.Name, rel.UpdatedProblem))
 			}
 		}
 

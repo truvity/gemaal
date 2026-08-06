@@ -4,6 +4,16 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.3.x
+- **0.3.2** — helm v4 timestamp fix, found by shadow mode on devel: v4
+  release Secrets serialize "updated" with the numeric offset repeated
+  ("+0200 +0200") where v3 wrote the zone name ("+0200 CEST"); the
+  parser now accepts that layout, and — the deeper flaw — a per-release
+  unparseable timestamp no longer aborts the whole housekeeping tick:
+  the release's tenant is HELD with the problem recorded (never delete
+  what you cannot read, same rule as unparseable ledger labels) and
+  planning continues for the rest of the estate. Tick-level fatality is
+  reserved for infrastructure failures (helm/kubectl exec or decode
+  errors), where the listing itself is untrustworthy.
 - **0.3.1 (unreleased)** — release plumbing for G4: the service image
   (ko, `ghcr.io/truvity/gemaal`, base `alpine/k8s:1.33.4` so `helm` and
   `kubectl` ship beside the binary, amd64+arm64) and the chart pushed to
