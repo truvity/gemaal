@@ -34,6 +34,10 @@ const (
 	// EnvKubecontext carries the kubeconfig context the tenant was
 	// resolved against.
 	EnvKubecontext = "GEMAAL_KUBECONTEXT"
+
+	// EnvServer overrides the gemaal service base URL the resolver
+	// ladder's RPC rung calls (gemaal.yaml's server otherwise).
+	EnvServer = "GEMAAL_SERVER"
 )
 
 // CI environment read for the CI release name. Present by construction

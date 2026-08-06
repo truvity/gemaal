@@ -71,10 +71,10 @@ type Options struct {
 	// — and for tests.
 	Chain identity.Chain
 
-	// Resolver overrides email→slug resolution outright (the seam a
-	// future service-backed Resolve client plugs into). When nil, the
+	// Resolver overrides email→slug resolution outright. When nil, the
 	// ladder in SlugResolver applies: the identity map from Config, else
-	// the interim kubectl-groups resolver.
+	// the service Resolve RPC when a server is configured, else the
+	// interim kubectl-groups resolver.
 	Resolver identity.Resolver
 
 	// IdentityRunner executes kubectl for the interim groups resolver
@@ -168,12 +168,14 @@ func resolveNamespace(ctx context.Context, o Options) (string, error) {
 
 // SlugResolver returns the email→slug resolver the namespace ladder
 // uses, in override order: Options.Resolver, else the gemaal.yaml
-// identity map from Config, else the interim kubectl-groups resolver
+// identity map from Config, else the gemaal service's Resolve RPC when
+// a server is configured (GEMAAL_SERVER, else gemaal.yaml's server —
+// the resolution authority, serving the deployer-rendered personnel
+// map), else the interim kubectl-groups resolver
 // (identity.KubectlGroupsResolver — the emp:{slug} group in the
-// caller's own cluster token; the sanctioned stand-in until the gemaal
-// service's Resolve RPC, which stays the end state). Exported so
-// gemaalctl whoami prints the slug through the exact resolver install
-// uses — one path, no drift.
+// caller's own cluster token; the sanctioned stand-in retiring in
+// stages behind the RPC rung). Exported so gemaalctl whoami prints the
+// slug through the exact resolver install uses — one path, no drift.
 func (o Options) SlugResolver() (identity.Resolver, error) {
 	if o.Resolver != nil {
 		return o.Resolver, nil
@@ -190,11 +192,29 @@ func (o Options) SlugResolver() (identity.Resolver, error) {
 		}
 	}
 
+	if server := o.serverAddress(); server != "" {
+		return identity.ResolveClient{Server: server}, nil
+	}
+
 	return identity.KubectlGroupsResolver{
 		Kubecontext: o.Kubecontext,
 		Kubeconfig:  o.Kubeconfig,
 		Runner:      o.IdentityRunner,
 	}, nil
+}
+
+// serverAddress is the gemaal service base URL the RPC rung calls:
+// the GEMAAL_SERVER override, else gemaal.yaml's server, else none.
+func (o Options) serverAddress() string {
+	if s := os.Getenv(EnvServer); s != "" {
+		return s
+	}
+
+	if o.Config != nil {
+		return o.Config.Server
+	}
+
+	return ""
 }
 
 func (o Options) personalNamespace() string {

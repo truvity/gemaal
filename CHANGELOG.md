@@ -3,6 +3,18 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.4.x
+- **0.4.0** — the Resolve feed (begins the staged emp:{slug} claim
+  retirement): `identity.ResolveClient` — a ConnectRPC client speaking
+  the deployed service's `gemaal.v1` Resolve RPC (short timeout, hard
+  errors naming the authority) — slots into the resolver ladder as the
+  rung before the interim kubectl-groups fallback. The ladder is now:
+  explicit resolver → gemaal.yaml identity map → service Resolve RPC
+  (when a server is configured: `GEMAAL_SERVER`, else gemaal.yaml's new
+  `server` base-URL field) → `KubectlGroupsResolver` (interim,
+  unchanged). The service side is untouched: it has served Resolve from
+  the deployer-rendered `config.identity.emails` map since 0.3.0.
+
 ## 0.3.x
 - **0.3.2** — helm v4 timestamp fix, found by shadow mode on devel: v4
   release Secrets serialize "updated" with the numeric offset repeated
