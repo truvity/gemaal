@@ -63,6 +63,11 @@ type (
 var helmTimeLayouts = []string{
 	"2006-01-02 15:04:05.999999999 -0700 MST",
 	"2006-01-02 15:04:05 -0700 MST",
+	// helm v4 repeats the numeric offset where v3 wrote the zone NAME:
+	// "+0200 +0200" instead of "+0200 CEST". The fractional-second
+	// element is optional to Go's parser, so one layout covers both
+	// sub-second and whole-second stamps.
+	"2006-01-02 15:04:05.999999999 -0700 -0700",
 	time.RFC3339Nano,
 	time.RFC3339,
 }
@@ -181,17 +186,25 @@ func (c ExecClient) ListReleases(ctx context.Context, namespace string) ([]Relea
 	releases := make([]Release, 0, len(entries))
 
 	for _, entry := range entries {
-		updated, err := parseHelmTime(entry.Updated)
-		if err != nil {
-			return nil, fmt.Errorf("release %s/%s: %w", namespace, entry.Name, err)
-		}
-
-		releases = append(releases, Release{
+		release := Release{
 			Namespace: namespace,
 			Name:      entry.Name,
-			Updated:   updated,
 			Status:    entry.Status,
-		})
+		}
+
+		// A timestamp that refuses to parse must not fail the whole
+		// listing — one broken stamp would stall planning for the entire
+		// estate. The release is returned with the problem recorded and
+		// the engine HOLDS its tenant (never delete what you cannot
+		// read). Exec and decode failures above stay fatal: those mean
+		// the listing itself is untrustworthy.
+		if updated, err := parseHelmTime(entry.Updated); err != nil {
+			release.UpdatedProblem = err.Error()
+		} else {
+			release.Updated = updated
+		}
+
+		releases = append(releases, release)
 	}
 
 	return releases, nil
@@ -294,6 +307,8 @@ func (c ExecClient) LabelSecret(ctx context.Context, namespace, secret string, l
 // parseHelmTime is tolerant of the layouts helm has used for "updated".
 // An unparseable timestamp is an error, never "assume it is old": the
 // age is the only thing standing between a release and a TTL deletion.
+// The caller records the error per release (Release.UpdatedProblem) so
+// the tenant is held instead of the whole listing failing.
 func parseHelmTime(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

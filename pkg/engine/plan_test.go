@@ -195,6 +195,58 @@ func TestPlanUnparseableLedgerHoldsAndReports(t *testing.T) {
 	assert.Contains(t, plan.Problems[0].Err, "keep-until")
 }
 
+func TestPlanUnparseableTimestampHoldsReleaseNotTheTick(t *testing.T) {
+	kube, helm, ssm := planFixture()
+
+	// The devel incident (2026-08-06): helm v4 stamped "updated" as
+	// "... +0200 +0200" and the parser refused it — and the whole
+	// housekeeping tick aborted. The failure must stay with the ONE
+	// release: its tenant is held with the problem recorded, and every
+	// other tenant in the estate is planned normally.
+	kube.namespaces = append(kube.namespaces, engine.Namespace{Name: "ci-truvity-shadow", Tier: "ci"})
+	kube.secrets["ci-truvity-shadow"] = []engine.ReleaseSecret{
+		helmSecret("ci-truvity-shadow", "shadow-proof", 1, nil),
+	}
+	helm.releases["ci-truvity-shadow"] = []engine.Release{{
+		Namespace:      "ci-truvity-shadow",
+		Name:           "shadow-proof",
+		UpdatedProblem: `unrecognized helm updated timestamp "2026-08-06 14:26:40.885437057 +0200 +0200"`,
+	}}
+
+	plan, err := newEngine(testConfig(t), kube, helm, ssm, nil).Plan(context.Background(), engine.Narrow{})
+	require.NoError(t, err, "one broken release must not stall planning for the estate")
+
+	// The broken release is HELD, with the reason on the keep record.
+	kept := map[string]engine.KeepReason{}
+	for _, k := range plan.Keep {
+		kept[k.Item.ID] = k.Reason
+	}
+
+	assert.Equal(t, engine.KeepLedgerUnparseable, kept["ci-truvity-shadow/shadow-proof"])
+
+	// The broken stamp is surfaced as a problem an operator can read.
+	problems := map[string]string{}
+	for _, p := range plan.Problems {
+		problems[p.Target] = p.Err
+	}
+
+	assert.Contains(t, problems["ci-truvity-shadow/shadow-proof"], "unrecognized helm updated timestamp")
+
+	// The rest of the estate is planned normally: the expired tenants
+	// are still deleted, exactly as in the baseline fixture.
+	deletes := map[string]engine.Rule{}
+	for _, a := range plan.Delete {
+		deletes[string(a.Item.Kind)+" "+a.Item.ID] = a.Rule
+	}
+
+	assert.Equal(t, map[string]engine.Rule{
+		"helm-release emp-idle/myapp":       engine.RuleTTLExpired,
+		"helm-release emp-idle/myapp-infra": engine.RuleTTLExpired,
+		"helm-release ci-truvity-bar/r1-a1": engine.RuleTTLExpired,
+		"ssm-prefix /test/emp-gone/myapp/":  engine.RuleOrphanGrace,
+	}, deletes)
+}
+
 func TestPlanArtifactsJudgedAgainstFullLiveSetWhenNarrowed(t *testing.T) {
 	kube, helm, ssm := planFixture()
 
