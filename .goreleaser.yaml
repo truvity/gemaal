@@ -44,12 +44,40 @@ archives:
     formats: [tar.gz]
     name_template: "gemaalctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+kos:
+  # The service image. Unlike the distroless siblings (github-roster et
+  # al.), gemaal shells out to `helm` and `kubectl` at runtime — the base
+  # image must carry both. alpine/k8s is the same image the gitops
+  # tenants janitor runs; its tag pins kubectl (1.33.4) and the bundled
+  # helm (v3.18.5), multi-arch amd64+arm64. Both run fine as uid 65532
+  # (the chart's runAsUser).
+  - id: gemaal
+    build: gemaal
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    bare: true
+    preserve_import_paths: false
+    base_import_paths: true
+    base_image: alpine/k8s:1.33.4
+    sbom: none
+    labels:
+      org.opencontainers.image.title: gemaal
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: https://github.com/truvity/gemaal
+
 release:
   github:
     owner: truvity
     name: gemaal
   header: |
     ## gemaal {{ .Tag }}
+
+    Docker image: `ghcr.io/truvity/gemaal:{{ .Version }}`
+    Helm chart: `oci://ghcr.io/truvity/charts/gemaal:{{ .Version }}`
 
     ### Install
 

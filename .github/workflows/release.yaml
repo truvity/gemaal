@@ -1,8 +1,9 @@
 # Third-party actions are pinned to commit SHAs (exact version tag noted
 # inline) so this repo starts clean on the unpinned-actions CodeQL finding.
 #
-# G1 releases binaries only. The service image (ko) and chart publishing
-# arrive with G3/G4, mirroring the github-roster release shape.
+# Releases: binaries (archives), the service image (ko, with helm+kubectl
+# from the alpine/k8s base — the service shells out to both), and the
+# helm chart — mirroring the github-roster release shape.
 name: Release
 
 on:
@@ -12,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
@@ -26,7 +28,22 @@ jobs:
       - name: Install devbox
         run: curl -fsSL https://get.jetify.com/devbox | bash -s -- -f
 
+      - uses: ko-build/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: GoReleaser
         run: devbox run -- goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KO_DOCKER_REPO: ghcr.io/truvity
+
+      # The git tag is the sole version authority: the chart's own version
+      # field is a placeholder that never moves, and is stamped here.
+      - name: Package and push Helm chart
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+          devbox run -- helm package charts/gemaal --version "$VERSION" --app-version "$VERSION" --destination dist/
+          devbox run -- helm push dist/gemaal-${VERSION}.tgz oci://ghcr.io/truvity/charts
