@@ -28,9 +28,12 @@ func TestLoadExample(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 24*time.Hour, ttl)
 
-	ttl, ok = cfg.TierTTL("emp")
+	ttl, ok = cfg.TierTTL("employee")
 	require.True(t, ok)
 	assert.Equal(t, 14*time.Hour, ttl)
+
+	assert.Equal(t, []string{"ci", "employee"}, cfg.TierValues())
+	assert.Equal(t, "emp-jdoe", cfg.PersonalNamespace("jdoe"))
 }
 
 func TestDefaults(t *testing.T) {
@@ -109,4 +112,73 @@ tiers:
 `))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ttl")
+}
+
+func TestNewDefaults(t *testing.T) {
+	cfg, err := config.Parse([]byte("{}"))
+	require.NoError(t, err)
+
+	assert.Equal(t, config.DefaultTierLabel, cfg.TierLabel)
+	assert.Equal(t, config.DefaultPersonalNamespace, cfg.Identity.PersonalNamespace)
+	assert.Equal(t, config.DefaultGroupPrefix, cfg.Authz.GroupPrefix)
+	assert.Equal(t, config.DefaultGroupsClaim, cfg.Authz.GroupsClaim)
+	assert.Equal(t, config.DefaultHoldDefault, cfg.Hold.Default.Std())
+	assert.Equal(t, config.DefaultHoldMax, cfg.Hold.Max.Std())
+	assert.Empty(t, cfg.TierValues(), "no tiers configured means nothing is watched")
+}
+
+func TestNonTestShapedBucketRefused(t *testing.T) {
+	_, err := config.Parse([]byte(`
+allowList:
+  s3Buckets:
+    - truvity-prod-data
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not test-shaped")
+}
+
+func TestTestShapedBucketAccepted(t *testing.T) {
+	_, err := config.Parse([]byte(`
+allowList:
+  s3Buckets:
+    - truvity-devel-test
+`))
+	require.NoError(t, err)
+}
+
+func TestPersonalNamespaceNeedsSlug(t *testing.T) {
+	_, err := config.Parse([]byte(`
+identity:
+  personalNamespace: emp-static
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "{slug}")
+}
+
+func TestIdentityMapValidated(t *testing.T) {
+	_, err := config.Parse([]byte(`
+identity:
+  emails:
+    not-an-email: jdoe
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not an email")
+
+	_, err = config.Parse([]byte(`
+identity:
+  emails:
+    j.doe@example.com: "Not A Slug"
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RFC1123")
+}
+
+func TestHoldBoundsValidated(t *testing.T) {
+	_, err := config.Parse([]byte(`
+hold:
+  default: 48h
+  max: 8h
+`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds max")
 }

@@ -96,6 +96,25 @@ every tick re-derives the world from what exists. Nothing survives a
 restart because nothing needs to — there is no state but the cluster
 (and, for the pulumi family, the stack backend).
 
+For a ring pair, the ledger is read off each release's NEWEST release
+Secret and merged per label with the app release's stamp winning over
+the infra release's — one deterministic rule. A ledger label that
+refuses to parse HOLDS the tenant (never "assume it is old") and is
+surfaced as a plan problem until somebody fixes the stamp.
+
+### Checkout, Extend and the keep-until write
+
+Checkout stamps `keep-until = now + duration`; Extend moves it forward
+and never backwards (`max(current, now + duration)`); both are bounded
+by server-side policy (`hold.default` / `hold.max`). The write itself
+is a **label patch on the newest release Secret of every ring member**
+(`kubectl label --overwrite`) — chosen over a helm-upgrade round-trip
+as the mechanically simplest write: the watcher has neither charts nor
+values, and either ring half surviving alone still carries the hold. A
+later client-side `helm upgrade --labels` re-stamps the ledger and may
+drop the hold — acceptable, because the upgrade itself is activity and
+resets the TTL clock.
+
 ## Uniform TTL
 
 **One mechanism: TTL from last activity, plus keep-until.** There is no
@@ -308,7 +327,28 @@ bounded structurally, not by care:
 | `Sweep` | janitor | execute the current plan (subject to the server's dry-run setting) |
 | `Resolve` | identity | map an email to its slug and namespace |
 
-Mutating RPCs are authenticated by the deployment (in-cluster: token
-review against the caller's service account; humans through a gateway
-that forwards verified identity). The API is small on purpose: install
-is not here, because installing is not gemaal's job.
+Mutating RPCs are authenticated by the deployment, in two lanes with a
+clear precedence: a TokenReview against the cluster's own API
+authenticates workload tokens (the API server, not gemaal, says what a
+token means); anything the cluster does not recognize is read as the
+gateway-forwarded OIDC JWT (the gateway ran the login and validated the
+signature against the issuer's JWKS before the request arrived). A
+FAILING TokenReview fails closed rather than downgrading to the weaker
+parse.
+
+Authorization is small and structural: Checkout/Extend require the
+caller to OWN the target namespace — an `emp:{slug}` group (prefix
+configurable) or a resolved email that renders to it through the
+personal-namespace template — or an admin group; Sweep is admin-only;
+no admin groups configured means nobody sweeps. Reads (Plan,
+ListTenants, Resolve) carry no app-side authentication — the gateway
+and the network policy bound who reaches them at all.
+
+Every sweep — loop tick or RPC — leaves a structured record (per-action
+rule, reason, outcome), logged durably and kept in a bounded in-memory
+history for the console. The server's dry-run setting wins over the
+request: a shadow-mode server reports and deletes nothing, whatever a
+caller asks.
+
+The API is small on purpose: install is not here, because installing is
+not gemaal's job.

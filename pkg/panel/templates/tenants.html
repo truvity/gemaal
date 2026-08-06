@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>Tenants</h1>
+<p class="lede">
+  Watched installations with their ledger state. TTL counts from last
+  activity; Checkout and Extend stamp keep-until, which always wins.
+</p>
+
+{{with .Data.Message}}<div class="banner ok">{{.}}</div>{{end}}
+{{with .Data.Problem}}<div class="banner danger">{{.}}</div>{{end}}
+
+<div class="card">
+{{if .Data.Rows}}
+  <table>
+    <thead>
+      <tr>
+        <th>Tenant</th>
+        <th>Tier</th>
+        <th>Age</th>
+        <th>TTL</th>
+        <th>Keep-until</th>
+        <th>Pending</th>
+        <th>Hold</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Data.Rows}}
+      <tr>
+        <td>
+          {{.Namespace}}/{{.Release}}
+          {{if .ExecutionID}}<div class="muted">exec {{.ExecutionID}}</div>{{end}}
+        </td>
+        <td>{{.Tier}}</td>
+        <td>{{.Age}}</td>
+        <td>{{.TTL}}</td>
+        <td>{{.KeepUntil}}</td>
+        <td>
+          {{if .Expired}}<span class="badge danger">{{.Pending}}</span>
+          {{else}}<span class="badge ok">{{.Pending}}</span>{{end}}
+        </td>
+        <td>
+          <form class="inline" method="post" action="/tenants/checkout">
+            <input type="hidden" name="namespace" value="{{.Namespace}}">
+            <input type="hidden" name="release" value="{{.Release}}">
+            <select name="duration">
+              <option value="4h">4h</option>
+              <option value="8h" selected>8h</option>
+              <option value="24h">24h</option>
+              <option value="72h">72h</option>
+            </select>
+            <button type="submit">Checkout</button>
+          </form>
+          <form class="inline" method="post" action="/tenants/extend">
+            <input type="hidden" name="namespace" value="{{.Namespace}}">
+            <input type="hidden" name="release" value="{{.Release}}">
+            <input type="hidden" name="duration" value="8h">
+            <button type="submit">Extend 8h</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+{{else}}
+  <p class="muted">No tenants in reach — no release in any tier-labeled namespace.</p>
+{{end}}
+</div>
+{{end}}

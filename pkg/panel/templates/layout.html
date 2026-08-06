@@ -1,0 +1,107 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · gemaal</title>
+<style>
+  :root {
+    --fg: #1c1d1f; --muted: #6a6f76; --line: #e2e5e9; --bg: #f5f6f8;
+    --surface: #ffffff; --inset: #f8f9fa;
+    --accent: #2f7dd1; --accent-strong: #2668ae; --on-accent: #ffffff;
+    --warn: #8a5a00; --warn-bg: #fff5e0; --danger: #b3261e; --danger-bg: #fdecea;
+    --ok: #1e7d3c; --ok-bg: #e7f5ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e8eaed; --muted: #9aa0a6; --line: #33373d; --bg: #101216;
+      --surface: #16181c; --inset: #1d2025;
+      --accent: #7db3e8; --accent-strong: #9cc5ee; --on-accent: #101216;
+      --warn: #e0b566; --warn-bg: #3a2f14; --danger: #f2857d; --danger-bg: #3a1f1c;
+      --ok: #7ed09a; --ok-bg: #17301f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--fg); background: var(--bg); margin: 0;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 24px;
+    padding: 14px 24px; border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  header .brand { font-weight: 650; letter-spacing: -0.01em; }
+  header nav { display: flex; gap: 18px; flex: 1; }
+  header nav a { color: var(--muted); text-decoration: none; }
+  header nav a:hover { color: var(--fg); }
+  header nav a.current { color: var(--fg); font-weight: 600; }
+  .who { color: var(--muted); font-size: 13px; }
+  main { padding: 28px 24px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 22px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  .card > :last-child { margin-bottom: 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--inset); }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .badge {
+    display: inline-block; border-radius: 10px; padding: 1px 8px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .badge.ok { color: var(--ok); background: var(--ok-bg); }
+  .badge.warn { color: var(--warn); background: var(--warn-bg); }
+  .badge.danger { color: var(--danger); background: var(--danger-bg); }
+  form.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+  button {
+    background: var(--accent); color: var(--on-accent); border: none;
+    padding: 5px 12px; border-radius: 6px; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-strong); }
+  select {
+    padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
+    font-size: 13px; background: var(--surface); color: var(--fg);
+  }
+  .banner {
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 20px; font-size: 14px;
+  }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+  .banner.danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+  footer {
+    color: var(--muted); font-size: 12px; padding: 20px 24px;
+    text-align: center; margin-top: 20px;
+  }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 12px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">gemaal</span>
+  <nav>
+    <a href="/" {{if eq .Nav "tenants"}}class="current"{{end}}>Tenants</a>
+    <a href="/sweeps" {{if eq .Nav "sweeps"}}class="current"{{end}}>Sweeps</a>
+  </nav>
+  <span class="who">{{.Who}} {{/* /logout is the gateway's logoutPath — Envoy ends the session, not this service. */}}· <a href="/logout">sign out</a></span>
+</header>
+<main>
+{{if .DryRun}}
+  <div class="banner warn">
+    Shadow mode — the housekeeping loop plans and reports, and deletes
+    nothing. Executing deletions is a deliberate configuration flip.
+  </div>
+{{end}}
+{{template "content" .}}
+</main>
+<footer>gemaal {{.Version}}</footer>
+</body>
+</html>{{end}}

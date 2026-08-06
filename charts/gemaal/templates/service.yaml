@@ -1,0 +1,18 @@
+# The one thing the exposure chain needs from this chart: the Service
+# the deployer's HTTPRoute targets (RPC, panel and healthz share the
+# listener).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gemaal.fullname" . }}
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "gemaal.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

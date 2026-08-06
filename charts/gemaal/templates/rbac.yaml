@@ -1,0 +1,76 @@
+{{- if .Values.rbac.create }}
+# The watcher's read set. Cluster-scoped because tenancy namespaces come
+# and go and RBAC cannot select by label:
+#
+#   - namespaces: the tier-label selection (`kubectl get ns -l ...`)
+#   - secrets: helm's release truth AND the label ledger — reads plus
+#     the keep-until patch (Checkout/Extend). This is the price of the
+#     no-store design; the role holds NO other secret-bearing verbs.
+#   - tokenreviews: authenticating workload callers (the mutations).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gemaal.fullname" . }}-watch
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, patch]
+  - apiGroups: [authentication.k8s.io]
+    resources: [tokenreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gemaal.fullname" . }}-watch
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gemaal.fullname" . }}-watch
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gemaal.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.rbac.sweep.enabled }}
+---
+# Sweep rights: what `helm uninstall` needs — delete on whatever the
+# watched charts installed, which is unbounded in general. Wildcard by
+# honest necessity, OFF by default, and pointless without confirm=true:
+# a shadow-mode service never calls a deleting verb. The app-side rails
+# (tier labels, allow-listed roots, plan re-authorization) are the real
+# bound; this flag is the cluster refusing to hand deletion rights to a
+# deployment that has not asked for them twice.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gemaal.fullname" . }}-sweep
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gemaal.fullname" . }}-sweep
+  labels:
+    {{- include "gemaal.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gemaal.fullname" . }}-sweep
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gemaal.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
