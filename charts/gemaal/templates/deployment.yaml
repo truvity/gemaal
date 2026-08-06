@@ -36,6 +36,12 @@ spec:
           args:
             - --config
             - /etc/gemaal/config.yaml
+          env:
+            # uid 65532 has no passwd entry in the alpine/k8s base, so
+            # the runtime would default HOME to "/" — unwritable on the
+            # read-only rootfs. Pin helm/kubectl caches to the emptyDir.
+            - name: HOME
+              value: /home/nonroot
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

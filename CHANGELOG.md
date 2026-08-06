@@ -4,6 +4,12 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.3.x
+- **0.3.1 (unreleased)** — release plumbing for G4: the service image
+  (ko, `ghcr.io/truvity/gemaal`, base `alpine/k8s:1.33.4` so `helm` and
+  `kubectl` ship beside the binary, amd64+arm64) and the chart pushed to
+  `oci://ghcr.io/truvity/charts/gemaal` — v0.3.0 published archives
+  only; chart sets `HOME=/home/nonroot` so helm/kubectl caches land on
+  the writable emptyDir under the read-only rootfs.
 - **0.3.0 (unreleased)** — G3 service v1: `pkg/engine` (the housekeeping
   engine — the bar#486 janitor prototype ported to the label-ledger
   model: plan/apply split, exec helm/kubectl ports, uniform TTL from

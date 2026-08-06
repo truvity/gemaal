@@ -8,6 +8,8 @@
     "govulncheck@latest",
     "just-lsp@latest",
     "just@latest",
+    "ko@latest",
+    "kubernetes-helm@latest",
     "lefthook@latest",
     "protoc-gen-connect-go@latest",
     "protoc-gen-go@latest"
