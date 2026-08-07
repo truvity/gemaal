@@ -56,9 +56,10 @@ rbac:
     enabled: false
 
 networkPolicy:
-  # Egress-only: DNS plus TLS (the API server and AWS SSM). Ingress
-  # rules (from the gateway fleet) are deployer-owned and live next to
-  # the exposure.
+  # Egress-only: DNS, TLS (the API server and AWS SSM), and the EKS Pod
+  # Identity credential endpoint (169.254.170.23:80 — cleartext HTTP on
+  # the node's link-local agent). Ingress rules (from the gateway fleet)
+  # are deployer-owned and live next to the exposure.
   enabled: true
 
 # Flipping confirm=true takes the service out of shadow mode: the
