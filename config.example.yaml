@@ -73,6 +73,8 @@ hold:
   default: 8h
   max: 168h
 
-# AWS region for the SSM client; empty defers to the environment
-# (AWS_REGION, as pod identity injects it).
+# AWS region for the SSM client. Omitted or empty resolves to AWS_REGION
+# from the environment, then to the built-in default (eu-central-1) —
+# explicit-with-a-default because EKS Pod Identity injects only the
+# credential-endpoint variables, never AWS_REGION.
 awsRegion: ""

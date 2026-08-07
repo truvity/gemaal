@@ -21,17 +21,27 @@ const (
 	ssmTestRoot = "/test/"
 )
 
+// SSMAPI is the slice of the SSM service the client uses — what
+// *ssm.Client implements and a test stub fakes. The paginator half is
+// the SDK's own interface so ssm.NewGetParametersByPathPaginator
+// accepts it directly.
+type SSMAPI interface {
+	ssm.GetParametersByPathAPIClient
+	DeleteParameters(ctx context.Context, params *ssm.DeleteParametersInput, optFns ...func(*ssm.Options)) (*ssm.DeleteParametersOutput, error)
+}
+
 // AWSSSMClient is the SSMClient backed by aws-sdk-go-v2. The S3
 // counterpart deliberately does not exist yet: the shared test bucket is
 // pending, so the S3 target stays stubbed off (Engine.S3 = nil) and the
 // plan reports the stub instead of sweeping.
 type AWSSSMClient struct {
-	API *ssm.Client
+	API SSMAPI
 }
 
-// NewAWSSSMClient builds an SSM client. Region may be empty — the SDK
-// then resolves it from the environment (AWS_REGION, as pod identity
-// injects it).
+// NewAWSSSMClient builds an SSM client with the default credential
+// chain (in-cluster, EKS Pod Identity supplies the credentials). Region
+// should be the config's resolved region; empty falls through to the
+// SDK's own environment resolution as a last resort.
 func NewAWSSSMClient(ctx context.Context, region string) (*AWSSSMClient, error) {
 	opts := []func(*awsconfig.LoadOptions) error{}
 	if region != "" {

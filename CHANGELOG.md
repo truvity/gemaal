@@ -4,6 +4,20 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.4.x
+- **0.4.1** — the SSM sweep actually reaches AWS: the deployed client
+  could never resolve a region — EKS Pod Identity injects only the
+  credential-endpoint variables (never AWS_REGION), IMDS is unreachable
+  from pods, and the chart sets no region — so every housekeeping tick
+  reported the allow-listed /test/ root as a problem. The region is now
+  explicit-with-a-default, resolved at config load in one visible place
+  (document > AWS_REGION > `eu-central-1`), so the SDK's environment
+  fallback never engages. `AWSSSMClient.API` narrows from `*ssm.Client`
+  to the new `SSMAPI` interface (the SDK's own paginator interface plus
+  DeleteParameters) and gains unit tests against a stubbed API: request
+  shaping, page-token threading, incomplete-row skips, delete batches
+  of 10, and the out-of-root refusal. aws-sdk-go-v2 modules are recorded
+  as the direct dependencies they always were. The engine's SSMClient
+  port, the sweep rules, and the chart are untouched.
 - **0.4.0** — the Resolve feed (begins the staged emp:{slug} claim
   retirement): `identity.ResolveClient` — a ConnectRPC client speaking
   the deployed service's `gemaal.v1` Resolve RPC (short timeout, hard
