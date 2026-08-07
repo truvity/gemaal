@@ -4,6 +4,14 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.4.x
+- **0.4.2** — chart-only: the egress NetworkPolicy admits the EKS Pod
+  Identity credential endpoint (169.254.170.23:80, the node's
+  link-local agent, cleartext HTTP). 0.4.1 on devel proved the gap
+  empirically: with the PodIdentityAssociation live the SDK finally had
+  a credential source, but the DNS+443-only egress dropped the fetch,
+  so the first SSM call spent ~4.5 minutes in dial timeouts before the
+  tick surfaced the credential error as the /test/ root's problem. No
+  Go changes.
 - **0.4.1** — the SSM sweep actually reaches AWS: the deployed client
   could never resolve a region — EKS Pod Identity injects only the
   credential-endpoint variables (never AWS_REGION), IMDS is unreachable

@@ -1,7 +1,11 @@
 {{- if .Values.networkPolicy.enabled }}
-# Egress-only: DNS, plus TLS for the API server and AWS SSM. Ingress
-# (from the gateway fleet to the panel/RPC) is deployer-owned and lives
-# next to the exposure — the expose-a-ui split.
+# Egress-only: DNS, TLS for the API server and AWS SSM, and the EKS Pod
+# Identity credential endpoint (cleartext HTTP on a link-local address —
+# the eks-pod-identity-agent on the node; without this rule the SDK's
+# credential fetch times out and every SSM sweep hangs minutes into a
+# credential error). Ingress (from the gateway fleet to the panel/RPC)
+# is deployer-owned and lives next to the exposure — the expose-a-ui
+# split.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,5 +25,11 @@ spec:
           protocol: TCP
     - ports:
         - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - port: 80
           protocol: TCP
 {{- end }}
