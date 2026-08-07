@@ -31,9 +31,7 @@ type SSMAPI interface {
 }
 
 // AWSSSMClient is the SSMClient backed by aws-sdk-go-v2. The S3
-// counterpart deliberately does not exist yet: the shared test bucket is
-// pending, so the S3 target stays stubbed off (Engine.S3 = nil) and the
-// plan reports the stub instead of sweeping.
+// counterpart is AWSS3Client (awss3client.go), built the same way.
 type AWSSSMClient struct {
 	API SSMAPI
 }

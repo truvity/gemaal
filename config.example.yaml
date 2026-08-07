@@ -42,9 +42,11 @@ tiers:
 
 # The only places sweeps may ever touch. Roots, not patterns.
 allowList:
-  # Buckets must carry a "test" segment. NOTE: the S3 sweep is stubbed
-  # off in this build (no client wired, pending the shared test bucket);
-  # a configured bucket shows up in every plan as a problem, on purpose.
+  # Buckets must carry a "test" segment (e.g. truvity-devel-test); a
+  # non-test-shaped name refuses to load, and deletion re-checks the
+  # shape at the last moment too. Sweeps collect "<ns>/<rel>/" tenant
+  # prefixes only — anything else in the bucket is reported, never
+  # touched.
   s3Buckets: []
   # Parameter-store roots must live under /test/ — configuration that is
   # not test-shaped refuses to load, and /secrets is refused outright.

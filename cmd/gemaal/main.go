@@ -102,9 +102,14 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 		eng.SSM = ssmClient
 	}
 
-	// The S3 target stays stubbed off pending the shared test bucket —
-	// the engine records the stub as a plan problem when buckets are
-	// configured, so a plan that skips S3 says so.
+	if len(cfg.AllowList.S3Buckets) > 0 {
+		s3Client, err := engine.NewAWSS3Client(ctx, cfg.AWSRegion)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("s3 client: %w", err)
+		}
+
+		eng.S3 = s3Client
+	}
 
 	// TokenReview needs the cluster; outside one (local development) the
 	// authenticator falls back to gateway-JWT parsing alone.
