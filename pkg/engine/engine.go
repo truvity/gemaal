@@ -42,9 +42,8 @@ type Engine struct {
 	SSM SSMClient
 
 	// S3 enumerates and deletes tenant prefixes in the allow-listed test
-	// buckets. Nil skips S3 — the production wiring passes nil until the
-	// shared test bucket exists (the target is stubbed off, and the plan
-	// says so rather than staying silent).
+	// buckets. Nil skips S3 (recorded as a problem when buckets are
+	// configured).
 	S3 S3Client
 
 	// Now is the clock; time.Now when nil.

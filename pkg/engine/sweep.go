@@ -170,9 +170,9 @@ func (e *Engine) sweepSSM(ctx context.Context, at time.Time, live map[Tenant]boo
 }
 
 // sweepS3 covers the allow-listed test buckets. With no S3 client wired
-// — the current deployment posture, pending the shared test bucket —
 // each configured bucket is recorded as a problem, so a plan that skips
-// S3 says so instead of staying silent.
+// S3 says so instead of staying silent (defensive: the wiring builds a
+// client whenever buckets are configured).
 func (e *Engine) sweepS3(ctx context.Context, at time.Time, live map[Tenant]bool, narrow Narrow, plan *Plan) {
 	for _, bucket := range e.Config.AllowList.S3Buckets {
 		target := "s3://" + bucket

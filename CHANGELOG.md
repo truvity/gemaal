@@ -3,6 +3,23 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.5.x
+- **0.5.0** — the S3 sweep goes live (claims S3 act,
+  gitops docs/plans/gemaal-plan.md): `AWSS3Client` — the S3Client the
+  engine has planned against all along, backed by aws-sdk-go-v2 and
+  wired whenever `allowList.s3Buckets` is non-empty, exactly like its
+  SSM sibling. Full-bucket listing (the sweep must SEE everything to
+  report unknown-tenant-shape occupants); `DeletePrefix` re-checks both
+  address halves at the last moment — the bucket must be test-shaped
+  (the config tripwire's regexp, enforced twice) and the prefix must be
+  a "<ns>/<rel>/" tenant container — then deletes in DeleteObjects
+  batches of 1000, quiet mode, with per-object failures surfaced and
+  the honest partial count returned. Unit tests against a stubbed
+  `S3API` mirror the 0.4.1 SSM set: request shaping, token threading,
+  incomplete-row skips, batch bounds, and every refusal. The engine's
+  sweep rules and the chart are untouched; shadow mode (`confirm:
+  false`) still reports without deleting.
+
 ## 0.4.x
 - **0.4.2** — chart-only: the egress NetworkPolicy admits the EKS Pod
   Identity credential endpoint (169.254.170.23:80, the node's
