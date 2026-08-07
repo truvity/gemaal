@@ -32,6 +32,10 @@ const (
 	DefaultGroupsClaim          = "groups"
 	DefaultHoldDefault          = 8 * time.Hour
 	DefaultHoldMax              = 7 * 24 * time.Hour
+	// DefaultAWSRegion is where the estate lives (the PIA policy and the
+	// /test/ parameters are regional); see Config.AWSRegion for why the
+	// region cannot come from the deployment environment.
+	DefaultAWSRegion = "eu-central-1"
 )
 
 // testRoot is the only prefix a parameter-store root may live under: the
@@ -153,8 +157,13 @@ type Config struct {
 	Identity  Identity        `yaml:"identity"`
 	Authz     Authz           `yaml:"authz"`
 	Hold      Hold            `yaml:"hold"`
-	// AWSRegion pins the AWS SDK region; empty defers to the
-	// environment (AWS_REGION, as pod identity injects it).
+	// AWSRegion pins the AWS SDK region. When the document omits it,
+	// AWS_REGION from the environment applies, then DefaultAWSRegion.
+	// Explicit-with-a-default because the deployment cannot lean on the
+	// environment: EKS Pod Identity injects only the credential-endpoint
+	// variables (AWS_CONTAINER_CREDENTIALS_FULL_URI and its token file),
+	// never AWS_REGION, and IMDS is not reachable from pods — so an
+	// unpinned region leaves the SSM client unable to resolve one at all.
 	AWSRegion string `yaml:"awsRegion"`
 }
 
@@ -232,6 +241,17 @@ func (c *Config) applyDefaults() {
 
 	if c.Hold.Max == 0 {
 		c.Hold.Max = Duration(DefaultHoldMax)
+	}
+
+	// Config beats environment beats default, and the resolution happens
+	// HERE so the effective region is decided in one visible place — the
+	// SDK's own environment fallback never engages.
+	if c.AWSRegion == "" {
+		c.AWSRegion = os.Getenv("AWS_REGION")
+	}
+
+	if c.AWSRegion == "" {
+		c.AWSRegion = DefaultAWSRegion
 	}
 }
 

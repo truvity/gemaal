@@ -127,6 +127,28 @@ func TestNewDefaults(t *testing.T) {
 	assert.Empty(t, cfg.TierValues(), "no tiers configured means nothing is watched")
 }
 
+// TestAWSRegionResolution pins the region ladder: document beats
+// AWS_REGION beats the built-in default. Explicit-with-a-default because
+// the deployment environment carries no region at all (EKS Pod Identity
+// injects only the credential-endpoint variables).
+func TestAWSRegionResolution(t *testing.T) {
+	t.Setenv("AWS_REGION", "")
+
+	cfg, err := config.Parse([]byte("{}"))
+	require.NoError(t, err)
+	assert.Equal(t, config.DefaultAWSRegion, cfg.AWSRegion)
+
+	t.Setenv("AWS_REGION", "eu-west-1")
+
+	cfg, err = config.Parse([]byte("{}"))
+	require.NoError(t, err)
+	assert.Equal(t, "eu-west-1", cfg.AWSRegion)
+
+	cfg, err = config.Parse([]byte(`awsRegion: us-east-1`))
+	require.NoError(t, err)
+	assert.Equal(t, "us-east-1", cfg.AWSRegion, "an explicit document region must beat the environment")
+}
+
 func TestNonTestShapedBucketRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
 allowList:
