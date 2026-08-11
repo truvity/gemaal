@@ -186,6 +186,22 @@ func (s Suite) run(ctx context.Context, m TestMain) (int, error) {
 
 	cluster := s.cluster()
 
+	// The tenant claim: a coordination.k8s.io Lease renewed while the
+	// suite runs. Correctness lock — without it, two suites or two
+	// AGENTS resolving the same release race helm operations and each
+	// teardown uninstalls the other's live install. Claimed even under
+	// EnvSkipDeploy: a reused install must not be raced either. A live
+	// foreign claim fails fast NAMING the holder; lease-API trouble
+	// degrades to a loud warning rather than blocking the suite.
+	claim, err := cluster.ClaimTenant(ctx, tenant, DefaultHolder())
+	if err != nil {
+		return 1, err
+	}
+
+	if claim != nil {
+		defer claim.Release(context.WithoutCancel(ctx))
+	}
+
 	defer s.teardown(cluster, tenant, skip)
 
 	if err := s.installPhases(ctx, cluster, tenant, skip); err != nil {
