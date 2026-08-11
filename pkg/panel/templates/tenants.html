@@ -7,6 +7,12 @@
 
 {{with .Data.Message}}<div class="banner ok">{{.}}</div>{{end}}
 {{with .Data.Problem}}<div class="banner danger">{{.}}</div>{{end}}
+{{with .Data.Unreadable}}<div class="banner danger">
+  This list is incomplete — {{len .}} namespace(s) could not be read, so any
+  tenant running there is missing below. Artifact sweeps are paused until the
+  view is whole.
+  <ul>{{range .}}<li><strong>{{.Namespace}}</strong> — {{.Reason}}</li>{{end}}</ul>
+</div>{{end}}
 
 <div class="card">
 {{if .Data.Rows}}

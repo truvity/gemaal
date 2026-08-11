@@ -70,10 +70,30 @@ func (e *Engine) planFromView(ctx context.Context, view *View, narrow Narrow) (*
 
 	// Artifacts are judged against the FULL live set, never the narrowed
 	// one: narrowing must not turn a live tenant's artifacts into orphans.
-	live := view.Live()
+	//
+	// An INCOMPLETE view is a narrowed live set by another name. If a
+	// namespace could not be enumerated its tenants are unknown, so they
+	// are absent from Live() and their prefixes would be indistinguishable
+	// from orphans. Releases are still classified above — that decision
+	// rests on tenants actually observed — but nothing is judged orphaned
+	// until the view is whole again.
+	if !view.Complete() {
+		for _, p := range view.Unreadable {
+			plan.Problems = append(plan.Problems, TargetProblem{
+				Target: p.Namespace,
+				Err:    "namespace not enumerated; artifact sweeps skipped this tick: " + p.Reason,
+			})
+		}
 
-	e.sweepSSM(ctx, view.At, live, narrow, plan)
-	e.sweepS3(ctx, view.At, live, narrow, plan)
+		e.log().WarnContext(ctx, "view incomplete — artifact sweeps skipped",
+			"unreadable", len(view.Unreadable),
+		)
+	} else {
+		live := view.Live()
+
+		e.sweepSSM(ctx, view.At, live, narrow, plan)
+		e.sweepS3(ctx, view.At, live, narrow, plan)
+	}
 
 	sortActions(plan.Delete)
 	sortKept(plan.Keep)

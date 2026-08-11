@@ -319,3 +319,13 @@ func TestPlanS3SweepWithClient(t *testing.T) {
 
 	assert.Equal(t, []string{"s3://truvity-devel-test/emp-gone/myapp/"}, s3Deletes)
 }
+
+// deletedTargets lists what a plan would destroy, by target identity.
+func deletedTargets(plan *engine.Plan) []string {
+	targets := make([]string, 0, len(plan.Delete))
+	for i := range plan.Delete {
+		targets = append(targets, plan.Delete[i].Item.ID)
+	}
+
+	return targets
+}

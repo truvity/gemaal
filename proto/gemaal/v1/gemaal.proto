@@ -114,6 +114,17 @@ message ListTenantsRequest {
 
 message ListTenantsResponse {
   repeated Tenant tenants = 1;
+
+  // Namespaces the view could not enumerate this call. The tenant list
+  // is then a PARTIAL answer, and saying so is the whole point: a list
+  // silently missing a namespace reads as "nothing is running there".
+  repeated NamespaceProblem unreadable = 2;
+}
+
+// NamespaceProblem is one namespace whose releases could not be listed.
+message NamespaceProblem {
+  string namespace = 1;
+  string reason = 2;
 }
 
 message CheckoutRequest {

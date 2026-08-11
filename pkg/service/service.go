@@ -131,6 +131,13 @@ func (s *Service) ListTenants(
 
 	resp := &gemaalv1.ListTenantsResponse{}
 
+	for _, p := range view.Unreadable {
+		resp.Unreadable = append(resp.Unreadable, &gemaalv1.NamespaceProblem{
+			Namespace: p.Namespace,
+			Reason:    p.Reason,
+		})
+	}
+
 	for i := range view.Tenants {
 		state := &view.Tenants[i]
 
