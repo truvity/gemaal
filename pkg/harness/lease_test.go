@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +35,12 @@ func claimFixture() (*Cluster, Tenant, *stubRunner) {
 // TestClaimTenant_FreshClaim: no lease → create → protected.
 func TestClaimTenant_FreshClaim(t *testing.T) {
 	c, tenant, s := claimFixture()
-	s.on("kubectl get lease gemaal-claim-myapp", "", errors.New(`leases.coordination.k8s.io "gemaal-claim-myapp" not found`))
+	// The REAL runner yields empty output + nil error for an absent
+	// lease (--ignore-not-found); kubectl's NotFound text only ever goes
+	// to the streamed stderr. A stub returning that text in the error
+	// encoded exactly the wrong assumption that shipped a claim which
+	// never engaged.
+	s.on("kubectl get lease gemaal-claim-myapp", "", nil)
 
 	claim, err := c.ClaimTenant(context.Background(), tenant, "me@host#1")
 	if err != nil {
@@ -134,7 +138,7 @@ func TestClaimTenant_UnavailableFailsOpen(t *testing.T) {
 // it would hand OUR bug to THEIR suite.
 func TestClaimRelease_OnlyDeletesOwn(t *testing.T) {
 	c, tenant, s := claimFixture()
-	s.on("kubectl get lease", "", fmt.Errorf(`leases.coordination.k8s.io %q not found`, "gemaal-claim-myapp"))
+	s.on("kubectl get lease", "", nil)
 
 	claim, err := c.ClaimTenant(context.Background(), tenant, "me@host#1")
 	if err != nil || claim == nil {
