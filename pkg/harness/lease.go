@@ -87,6 +87,9 @@ func leaseName(t Tenant) string { return "gemaal-claim-" + t.Release }
 // coordination infrastructure it can live without.
 var errLeaseUnavailable = errors.New("lease unavailable")
 
+// errLeaseNotFound marks a cleanly-absent lease — the fresh-claim path.
+var errLeaseNotFound = errors.New("lease not found")
+
 // ClaimTenant acquires the tenant's claim for holder, taking over an
 // expired one, and starts the background renewal. Returns ErrTenantHeld
 // when a LIVE claim belongs to someone else.
@@ -191,7 +194,7 @@ func (c *Cluster) acquireLease(ctx context.Context, tenant Tenant, holder string
 		// carries resourceVersion, so a concurrent takeover loses the
 		// compare-and-swap instead of silently double-claiming.
 		return c.writeLease(ctx, tenant, holder, current.Metadata.ResourceVersion, "replace")
-	case strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found"):
+	case errors.Is(err, errLeaseNotFound):
 		return c.writeLease(ctx, tenant, holder, "", "create")
 	default:
 		fmt.Fprintf(os.Stderr,
@@ -215,13 +218,24 @@ func (c *Cluster) renewLease(ctx context.Context, tenant Tenant, holder string) 
 }
 
 func (c *Cluster) getLease(ctx context.Context, tenant Tenant) (*leaseObject, error) {
+	// --ignore-not-found turns absence into exit 0 with EMPTY output.
+	// This is the ONLY reliable absence signal available here: kubectl
+	// prints "NotFound" on stderr, which ExecRunner streams to the
+	// terminal rather than into the error — err.Error() is a bare
+	// "exit status 1", and matching on it shipped a claim that never
+	// engaged (every fresh claim read as "unavailable" and failed open).
 	out, err := c.runner().Output(ctx, c.kubectlArgs(
 		"get", "lease", leaseName(tenant),
 		"--namespace", tenant.Namespace,
+		"--ignore-not-found",
 		"-o", "json",
 	)...)
 	if err != nil {
 		return nil, err
+	}
+
+	if strings.TrimSpace(out) == "" {
+		return nil, errLeaseNotFound
 	}
 
 	var lease leaseObject
