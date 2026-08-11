@@ -62,14 +62,30 @@ type fakeHelm struct {
 	// releases is keyed by namespace.
 	releases map[string][]engine.Release
 	listErr  error
+	// listErrs fails specific namespaces, leaving the rest readable.
+	listErrs map[string]error
+	// blockFor stalls the listed namespaces until ctx dies, as a killed
+	// `helm list` subprocess does.
+	blockFor map[string]bool
 
 	uninstalled  []string // "<ns>/<release>"
 	uninstallErr map[string]error
 }
 
-func (f *fakeHelm) ListReleases(_ context.Context, namespace string) ([]engine.Release, error) {
+func (f *fakeHelm) ListReleases(ctx context.Context, namespace string) ([]engine.Release, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
+	}
+
+	if err := f.listErrs[namespace]; err != nil {
+		return nil, err
+	}
+
+	if f.blockFor[namespace] {
+		<-ctx.Done()
+
+		// What exec.CommandContext reports once it kills the child.
+		return nil, fmt.Errorf("list helm releases in %s: signal: killed: %w", namespace, ctx.Err())
 	}
 
 	return f.releases[namespace], nil

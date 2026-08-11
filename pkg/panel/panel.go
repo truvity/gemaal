@@ -189,6 +189,15 @@ type tenantsData struct {
 	Rows    []tenantRow
 	Message string
 	Problem string
+
+	// Unreadable is the honesty banner: which namespaces are missing from
+	// Rows, and why. Empty on a whole view.
+	Unreadable []namespaceProblemRow
+}
+
+type namespaceProblemRow struct {
+	Namespace string
+	Reason    string
 }
 
 type sweepRow struct {
@@ -224,6 +233,13 @@ func (p *Panel) handleTenants(w http.ResponseWriter, r *http.Request) {
 	data := tenantsData{
 		Message: r.URL.Query().Get("msg"),
 		Problem: r.URL.Query().Get("err"),
+	}
+
+	for _, p := range resp.Msg.GetUnreadable() {
+		data.Unreadable = append(data.Unreadable, namespaceProblemRow{
+			Namespace: p.GetNamespace(),
+			Reason:    p.GetReason(),
+		})
 	}
 
 	for _, t := range resp.Msg.GetTenants() {

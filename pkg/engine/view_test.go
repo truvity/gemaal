@@ -134,27 +134,34 @@ func TestViewUnparseableLedgerIsAProblemNotAGuess(t *testing.T) {
 	assert.False(t, tenant.Expired(now))
 }
 
-func TestViewListFailuresAreFatal(t *testing.T) {
-	// Release truth is not optional: any listing failure aborts the view
-	// rather than presenting a world with tenants missing.
+func TestViewListFailuresDegradeRatherThanBlind(t *testing.T) {
+	// Release truth is not optional — but "not optional" used to mean the
+	// whole view aborted, which presented the operator with NOTHING rather
+	// than a world with one namespace missing. Both are honest; only one is
+	// useful. The failure is now named per namespace, and the artifact
+	// sweeps refuse to judge orphans while any namespace is unread
+	// (TestPlanRefusesArtifactSweepsOnIncompleteView).
 	kube := &fakeKube{namespaces: []engine.Namespace{{Name: "emp-jdoe", Tier: "employee"}}}
 
-	_, err := newEngine(testConfig(t), kube, &fakeHelm{listErr: errors.New("rbac")}, nil, nil).View(context.Background())
-	require.ErrorContains(t, err, "list helm releases")
+	view, err := newEngine(testConfig(t), kube, &fakeHelm{listErr: errors.New("rbac")}, nil, nil).View(context.Background())
+	require.NoError(t, err)
+	require.Len(t, view.Unreadable, 1)
+	assert.Equal(t, "emp-jdoe", view.Unreadable[0].Namespace)
+	assert.Contains(t, view.Unreadable[0].Reason, "list helm releases")
+	assert.Empty(t, view.Tenants, "an unread namespace contributes no tenants")
 
+	// The ledger lives in the release secrets, so losing them loses TTL and
+	// keep-until — the same category of blindness, reported the same way.
 	helm := &fakeHelm{releases: map[string][]engine.Release{
 		"emp-jdoe": {{Namespace: "emp-jdoe", Name: "myapp", Updated: now}},
 	}}
 	kube.secretsErr = errors.New("rbac")
 
-	_, err = newEngine(testConfig(t), kube, helm, nil, nil).View(context.Background())
-	require.ErrorContains(t, err, "list release secrets")
-
-	_, err = newEngine(testConfig(t), &fakeKube{nsErr: errors.New("down")}, helm, nil, nil).View(context.Background())
-	require.ErrorContains(t, err, "list tier namespaces")
-
-	_, err = (&engine.Engine{Config: testConfig(t)}).View(context.Background())
-	require.ErrorContains(t, err, "release truth is not optional")
+	view, err = newEngine(testConfig(t), kube, helm, nil, nil).View(context.Background())
+	require.NoError(t, err)
+	require.Len(t, view.Unreadable, 1)
+	assert.Contains(t, view.Unreadable[0].Reason, "list release secrets")
+	assert.False(t, view.Complete())
 }
 
 func TestStampKeepUntilStampsBothRingHalves(t *testing.T) {
@@ -187,4 +194,83 @@ func TestStampKeepUntilRefusesUnknownTenant(t *testing.T) {
 
 	err := eng.StampKeepUntil(context.Background(), engine.Tenant{Namespace: "emp-jdoe", Release: "ghost"}, now)
 	require.ErrorContains(t, err, "no release secrets")
+}
+
+// One namespace must not cost the other 27. Observed on devel as a killed
+// `helm list` in emp-ijovi surfacing to the operator as "could not build
+// the tenant view" for every namespace at once.
+func TestViewSurvivesOneUnreadableNamespace(t *testing.T) {
+	kube, helm, _ := planFixture()
+	helm.listErrs = map[string]error{
+		"emp-jdoe": errors.New("list helm releases in emp-jdoe: signal: killed: "),
+	}
+
+	view, err := newEngine(testConfig(t), kube, helm, nil, nil).View(context.Background())
+	require.NoError(t, err, "one bad namespace is not a bad view")
+
+	require.False(t, view.Complete(), "a view missing a namespace is not complete")
+	require.Len(t, view.Unreadable, 1)
+	assert.Equal(t, "emp-jdoe", view.Unreadable[0].Namespace)
+	assert.Contains(t, view.Unreadable[0].Reason, "signal: killed")
+
+	// The readable namespaces are still there — the whole point.
+	var names []string
+	for _, tenant := range view.Tenants {
+		names = append(names, tenant.Tenant.Namespace)
+	}
+
+	assert.Contains(t, names, "emp-idle")
+	assert.Contains(t, names, "ci-truvity-bar")
+	assert.NotContains(t, names, "emp-jdoe", "its releases were never read")
+}
+
+// The safety half. emp-jdoe's SSM parameter is spared only because myapp is
+// observed live; if the namespace cannot be read, that evidence is missing
+// and the parameter looks like an orphan past grace. It must not be touched.
+func TestPlanRefusesArtifactSweepsOnIncompleteView(t *testing.T) {
+	kube, helm, ssm := planFixture()
+
+	// Control: with a whole view the live tenant's parameter is kept and
+	// the genuine orphan is deleted.
+	whole, err := newEngine(testConfig(t), kube, helm, ssm, nil).Plan(context.Background(), engine.Narrow{})
+	require.NoError(t, err)
+	require.NotEmpty(t, deletedTargets(whole), "fixture must delete something, or this proves nothing")
+	assert.NotContains(t, deletedTargets(whole), "/test/emp-jdoe/myapp/db-url")
+
+	// Now break exactly the namespace whose liveness spares that parameter.
+	helm.listErrs = map[string]error{"emp-jdoe": errors.New("signal: killed")}
+
+	partial, err := newEngine(testConfig(t), kube, helm, ssm, nil).Plan(context.Background(), engine.Narrow{})
+	require.NoError(t, err)
+
+	assert.NotContains(t, deletedTargets(partial), "/test/emp-jdoe/myapp/db-url",
+		"an unread namespace must never make a live tenant's artifacts look orphaned")
+
+	for _, target := range deletedTargets(partial) {
+		assert.NotContains(t, target, "/test/", "no artifact is judged while the view is partial")
+	}
+
+	require.NotEmpty(t, partial.Problems, "the skipped sweep must be visible in the plan")
+	assert.Contains(t, partial.Problems[0].Err, "artifact sweeps skipped")
+}
+
+// A caller that walks away kills every child helm process. That is one dead
+// request, not 28 broken namespaces, and inventing the latter would look
+// exactly like a real outage.
+func TestViewReportsCancellationRatherThanBlamingNamespaces(t *testing.T) {
+	kube, helm, _ := planFixture()
+	helm.blockFor = map[string]bool{"ci-truvity-bar": true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	view, err := newEngine(testConfig(t), kube, helm, nil, nil).View(ctx)
+
+	require.Error(t, err, "an abandoned view is an error, not a partial answer")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, view)
 }

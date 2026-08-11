@@ -13,13 +13,45 @@ import (
 // RFC3339 cannot ride a label).
 const KeepUntilLayout = "20060102T150405Z"
 
+// namespaceListTimeout bounds one namespace's release enumeration.
+// Generous next to a healthy `helm list` (tens of ms) and well inside
+// the 60s housekeeping tick, so a stuck namespace is reported as stuck
+// rather than silently pushing the whole loop past its interval.
+const namespaceListTimeout = 20 * time.Second
+
 // View is the level-triggered world: everything re-derived from what
 // exists, every tick. There is no state but the cluster.
 type View struct {
 	At         time.Time
 	Namespaces []Namespace
 	Tenants    []TenantState
+
+	// Unreadable records namespaces whose release enumeration failed.
+	//
+	// One namespace must not cost the whole view. `helm list` is a
+	// subprocess, and a single slow or killed one used to abort View
+	// entirely — observed on devel as
+	//   list helm releases in emp-ijovi: ...: signal: killed
+	// which surfaced to the operator as "could not build the tenant
+	// view" for all 28 namespaces at once.
+	//
+	// A partial view is fine to LOOK at and dangerous to DELETE from:
+	// the tenants of an unreadable namespace are unknown, so they are
+	// missing from Live() and their artifacts would look orphaned. The
+	// artifact sweeps therefore refuse to run while this is non-empty —
+	// the same rule the narrowing already follows.
+	Unreadable []NamespaceProblem
 }
+
+// NamespaceProblem is one namespace the view could not enumerate.
+type NamespaceProblem struct {
+	Namespace string `json:"namespace" yaml:"namespace"`
+	Reason    string `json:"reason"    yaml:"reason"`
+}
+
+// Complete reports whether every in-reach namespace was enumerated.
+// Destructive artifact decisions require it.
+func (v *View) Complete() bool { return len(v.Unreadable) == 0 }
 
 // View builds the tenant view: tier-labeled namespaces, their releases
 // grouped into ring pairs, and the ledger read off the release Secrets.
@@ -60,9 +92,35 @@ func (e *Engine) View(ctx context.Context) (*View, error) {
 
 		view.Namespaces = append(view.Namespaces, ns)
 
-		tenants, err := e.namespaceTenants(ctx, ns)
+		// Bound each namespace on its own clock. `helm list` is a
+		// subprocess and the slow ones are slow for their own reasons; a
+		// shared budget lets the first of them starve all 27 that follow.
+		nsCtx, cancel := context.WithTimeout(ctx, namespaceListTimeout)
+		tenants, err := e.namespaceTenants(nsCtx, ns)
+
+		cancel()
+
 		if err != nil {
-			return nil, err
+			// A dead PARENT is not a namespace problem. exec kills the
+			// child on cancellation, so a caller that walked away (a
+			// closed browser tab, a shed request) produces the very same
+			// "signal: killed" for every remaining namespace. Reporting
+			// 28 unreadable namespaces would be inventing evidence, and
+			// worse, it is exactly the shape a real outage takes.
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("view abandoned at namespace %s: %w", ns.Name, ctx.Err())
+			}
+
+			// Record and carry on. Aborting here would hide every OTHER
+			// namespace behind one slow subprocess, which is both worse
+			// for the operator and no safer: the sweeps below decline to
+			// act on an incomplete view.
+			view.Unreadable = append(view.Unreadable, NamespaceProblem{
+				Namespace: ns.Name,
+				Reason:    err.Error(),
+			})
+
+			continue
 		}
 
 		view.Tenants = append(view.Tenants, tenants...)
