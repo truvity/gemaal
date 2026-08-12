@@ -353,6 +353,56 @@ func runBuildHook(
 	return runner.Run(ctx, hook...)
 }
 
+// decommissionCommand is the claim-aware sibling of uninstall: the same
+// client-side helm teardown under the caller's own kubeconfig — k8s RBAC
+// is the authorization — refusing while a suite's claim Lease is live.
+// The service's Decommission RPC stays as the panel's button; this
+// command needs no bearer and works wherever kubectl does.
+func decommissionCommand() *cli.Command {
+	return &cli.Command{
+		Name: "decommission",
+		Usage: "uninstall the resolved tenant's ring pair NOW — the explicit end-of-life call; " +
+			"refuses while a suite's claim Lease is live, overrides the tenant's own keep-until",
+		Flags: append(tenantFlags(),
+			&cli.BoolFlag{Name: "dry-run", Usage: "report the claim state and what would be uninstalled, touching nothing"},
+		),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			opts, _, err := tenantOptions(cmd)
+			if err != nil {
+				return err
+			}
+
+			tenant, err := harness.Resolve(ctx, opts)
+			if err != nil {
+				return err
+			}
+
+			cluster := &harness.Cluster{Kubecontext: opts.Kubecontext, Kubeconfig: opts.Kubeconfig, Runner: newRunner()}
+
+			if holder, live := cluster.ClaimedBy(ctx, tenant); live {
+				return fmt.Errorf(
+					"tenant %s is claimed by %q — a suite is running against it; decommission after it finishes (an abandoned claim frees itself within its lease duration)",
+					tenant, holder)
+			}
+
+			if cmd.Bool("dry-run") {
+				say(cmd.Root().Writer, "would uninstall %s and %s-infra (where present); no live claim holds it\n",
+					tenant, tenant.Release)
+
+				return nil
+			}
+
+			if err := cluster.UninstallPair(ctx, tenant); err != nil {
+				return err
+			}
+
+			say(cmd.Root().Writer, "decommissioned %s (and its -infra companion, where present)\n", tenant)
+
+			return nil
+		},
+	}
+}
+
 func uninstallCommand() *cli.Command {
 	return &cli.Command{
 		Name: "uninstall",

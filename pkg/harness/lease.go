@@ -294,3 +294,23 @@ func DefaultHolder() string {
 
 	return fmt.Sprintf("%s@%s#%d", user, host, os.Getpid())
 }
+
+// ClaimedBy reports the tenant's live claim, if any: the holder's name
+// and whether the lease is currently within its renewal window. Absent,
+// expired and unreadable leases all read as unclaimed — the fail-open
+// posture every claim consumer shares.
+func (c *Cluster) ClaimedBy(ctx context.Context, tenant Tenant) (holder string, live bool) {
+	current, err := c.getLease(ctx, tenant)
+	if err != nil {
+		return "", false
+	}
+
+	ts, err := time.Parse(leaseTimeLayout, current.Spec.RenewTime)
+	if err != nil {
+		return current.Spec.HolderIdentity, false
+	}
+
+	dur := time.Duration(current.Spec.LeaseDurationSeconds) * time.Second
+
+	return current.Spec.HolderIdentity, time.Since(ts) <= dur
+}

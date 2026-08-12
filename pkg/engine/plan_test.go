@@ -329,3 +329,54 @@ func deletedTargets(plan *engine.Plan) []string {
 
 	return targets
 }
+
+// TestPlanKeepsClaimedTenants: a live harness claim holds a tenant the
+// TTL rule would otherwise delete — TTL age is helm activity, which a
+// SKIP_DEPLOY run against an old standing install never refreshes; the
+// sweeper was the one actor the claim did not bind. An expired claim
+// releases the hold (dead hands release).
+func TestPlanKeepsClaimedTenants(t *testing.T) {
+	kube, helm, ssm := planFixture()
+	// emp-idle/myapp is ~40h past deploy — TTL-expired in the fixture.
+	kube.leases = map[string]engine.Lease{
+		"emp-idle/gemaal-claim-myapp": {Holder: "runner@host#1", RenewTime: now.Add(-5 * time.Second), DurationSeconds: 90},
+	}
+
+	eng := newEngine(testConfig(t), kube, helm, ssm, nil)
+
+	plan, err := eng.Plan(context.Background(), engine.Narrow{})
+	require.NoError(t, err)
+
+	for _, action := range plan.Delete {
+		assert.NotEqual(t, "emp-idle", action.Item.Tenant.Namespace,
+			"a claimed tenant must not be planned for deletion: %+v", action)
+	}
+
+	var kept bool
+
+	for _, k := range plan.Keep {
+		if k.Item.Tenant.Namespace == "emp-idle" && k.Reason == engine.KeepClaimLive {
+			kept = true
+		}
+	}
+
+	assert.True(t, kept, "the claimed tenant must be kept with the claim-live reason")
+
+	// The same claim, expired: the TTL rule fires again.
+	kube.leases["emp-idle/gemaal-claim-myapp"] = engine.Lease{
+		Holder: "runner@host#1", RenewTime: now.Add(-10 * time.Minute), DurationSeconds: 90,
+	}
+
+	plan, err = eng.Plan(context.Background(), engine.Narrow{})
+	require.NoError(t, err)
+
+	var deleted bool
+
+	for _, action := range plan.Delete {
+		if action.Item.Tenant.Namespace == "emp-idle" {
+			deleted = true
+		}
+	}
+
+	assert.True(t, deleted, "an expired claim must not hold the tenant")
+}

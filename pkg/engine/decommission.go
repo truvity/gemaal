@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 )
 
 // RuleDecommission names the explicit end-of-life rule: a caller said
@@ -76,15 +75,11 @@ func (e *Engine) Decommission(ctx context.Context, namespace, release string, co
 	}
 
 	// A LIVE harness claim protects the tenant — the same arbitration
-	// the suites give each other. Absent, expired or unreadable leases
-	// do not block: the claim is protection for a RUNNING suite, and a
-	// cluster where leases cannot be read must degrade to the
-	// pre-claim behavior, not brick the explicit path.
-	if lease, err := e.Kube.Lease(ctx, namespace, "gemaal-claim-"+release); err == nil && lease.Holder != "" {
-		expiry := lease.RenewTime.Add(time.Duration(lease.DurationSeconds) * time.Second)
-		if view.At.Before(expiry) {
-			return nil, ErrTenantClaimed{Tenant: target.Tenant, Holder: lease.Holder}
-		}
+	// the suites give each other, and now the same rule the TTL sweep
+	// applies (KeepClaimLive). The view already carries the lease,
+	// read fail-open there.
+	if target.ClaimLive(view.At) {
+		return nil, ErrTenantClaimed{Tenant: target.Tenant, Holder: target.Claim.Holder}
 	}
 
 	plan.Tenants = []TenantState{*target}
