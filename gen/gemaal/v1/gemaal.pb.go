@@ -962,6 +962,120 @@ func (x *SweepResponse) GetDryRun() bool {
 	return false
 }
 
+type DecommissionRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Namespace string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Release   string                 `protobuf:"bytes,2,opt,name=release,proto3" json:"release,omitempty"`
+	// Force a dry run even on a server configured to execute; the
+	// reverse is impossible, exactly as with Sweep.
+	DryRun        bool `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecommissionRequest) Reset() {
+	*x = DecommissionRequest{}
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecommissionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecommissionRequest) ProtoMessage() {}
+
+func (x *DecommissionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecommissionRequest.ProtoReflect.Descriptor instead.
+func (*DecommissionRequest) Descriptor() ([]byte, []int) {
+	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DecommissionRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *DecommissionRequest) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+func (x *DecommissionRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+type DecommissionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SweepResult         `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	DryRun        bool                   `protobuf:"varint,2,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecommissionResponse) Reset() {
+	*x = DecommissionResponse{}
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecommissionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecommissionResponse) ProtoMessage() {}
+
+func (x *DecommissionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecommissionResponse.ProtoReflect.Descriptor instead.
+func (*DecommissionResponse) Descriptor() ([]byte, []int) {
+	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DecommissionResponse) GetResults() []*SweepResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *DecommissionResponse) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
 type ResolveRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
@@ -971,7 +1085,7 @@ type ResolveRequest struct {
 
 func (x *ResolveRequest) Reset() {
 	*x = ResolveRequest{}
-	mi := &file_gemaal_v1_gemaal_proto_msgTypes[14]
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -983,7 +1097,7 @@ func (x *ResolveRequest) String() string {
 func (*ResolveRequest) ProtoMessage() {}
 
 func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gemaal_v1_gemaal_proto_msgTypes[14]
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -996,7 +1110,7 @@ func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRequest) Descriptor() ([]byte, []int) {
-	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{14}
+	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ResolveRequest) GetEmail() string {
@@ -1018,7 +1132,7 @@ type ResolveResponse struct {
 
 func (x *ResolveResponse) Reset() {
 	*x = ResolveResponse{}
-	mi := &file_gemaal_v1_gemaal_proto_msgTypes[15]
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1030,7 +1144,7 @@ func (x *ResolveResponse) String() string {
 func (*ResolveResponse) ProtoMessage() {}
 
 func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gemaal_v1_gemaal_proto_msgTypes[15]
+	mi := &file_gemaal_v1_gemaal_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1043,7 +1157,7 @@ func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveResponse.ProtoReflect.Descriptor instead.
 func (*ResolveResponse) Descriptor() ([]byte, []int) {
-	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{15}
+	return file_gemaal_v1_gemaal_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ResolveResponse) GetSlug() string {
@@ -1126,6 +1240,13 @@ const file_gemaal_v1_gemaal_proto_rawDesc = "" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"Z\n" +
 	"\rSweepResponse\x120\n" +
 	"\aresults\x18\x01 \x03(\v2\x16.gemaal.v1.SweepResultR\aresults\x12\x17\n" +
+	"\adry_run\x18\x02 \x01(\bR\x06dryRun\"f\n" +
+	"\x13DecommissionRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x18\n" +
+	"\arelease\x18\x02 \x01(\tR\arelease\x12\x17\n" +
+	"\adry_run\x18\x03 \x01(\bR\x06dryRun\"a\n" +
+	"\x14DecommissionResponse\x120\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.gemaal.v1.SweepResultR\aresults\x12\x17\n" +
 	"\adry_run\x18\x02 \x01(\bR\x06dryRun\"&\n" +
 	"\x0eResolveRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\"C\n" +
@@ -1137,14 +1258,15 @@ const file_gemaal_v1_gemaal_proto_rawDesc = "" +
 	"\x17ACTION_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10ACTION_KIND_NONE\x10\x01\x12\x18\n" +
 	"\x14ACTION_KIND_TEARDOWN\x10\x02\x12\x15\n" +
-	"\x11ACTION_KIND_SWEEP\x10\x032\x98\x03\n" +
+	"\x11ACTION_KIND_SWEEP\x10\x032\xe9\x03\n" +
 	"\rGemaalService\x127\n" +
 	"\x04Plan\x12\x16.gemaal.v1.PlanRequest\x1a\x17.gemaal.v1.PlanResponse\x12L\n" +
 	"\vListTenants\x12\x1d.gemaal.v1.ListTenantsRequest\x1a\x1e.gemaal.v1.ListTenantsResponse\x12C\n" +
 	"\bCheckout\x12\x1a.gemaal.v1.CheckoutRequest\x1a\x1b.gemaal.v1.CheckoutResponse\x12=\n" +
 	"\x06Extend\x12\x18.gemaal.v1.ExtendRequest\x1a\x19.gemaal.v1.ExtendResponse\x12:\n" +
 	"\x05Sweep\x12\x17.gemaal.v1.SweepRequest\x1a\x18.gemaal.v1.SweepResponse\x12@\n" +
-	"\aResolve\x12\x19.gemaal.v1.ResolveRequest\x1a\x1a.gemaal.v1.ResolveResponseB\x93\x01\n" +
+	"\aResolve\x12\x19.gemaal.v1.ResolveRequest\x1a\x1a.gemaal.v1.ResolveResponse\x12O\n" +
+	"\fDecommission\x12\x1e.gemaal.v1.DecommissionRequest\x1a\x1f.gemaal.v1.DecommissionResponseB\x93\x01\n" +
 	"\rcom.gemaal.v1B\vGemaalProtoP\x01Z0github.com/truvity/gemaal/gen/gemaal/v1;gemaalv1\xa2\x02\x03GXX\xaa\x02\tGemaal.V1\xca\x02\tGemaal\\V1\xe2\x02\x15Gemaal\\V1\\GPBMetadata\xea\x02\n" +
 	"Gemaal::V1b\x06proto3"
 
@@ -1161,7 +1283,7 @@ func file_gemaal_v1_gemaal_proto_rawDescGZIP() []byte {
 }
 
 var file_gemaal_v1_gemaal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_gemaal_v1_gemaal_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_gemaal_v1_gemaal_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_gemaal_v1_gemaal_proto_goTypes = []any{
 	(ActionKind)(0),               // 0: gemaal.v1.ActionKind
 	(*Tenant)(nil),                // 1: gemaal.v1.Tenant
@@ -1178,46 +1300,51 @@ var file_gemaal_v1_gemaal_proto_goTypes = []any{
 	(*SweepRequest)(nil),          // 12: gemaal.v1.SweepRequest
 	(*SweepResult)(nil),           // 13: gemaal.v1.SweepResult
 	(*SweepResponse)(nil),         // 14: gemaal.v1.SweepResponse
-	(*ResolveRequest)(nil),        // 15: gemaal.v1.ResolveRequest
-	(*ResolveResponse)(nil),       // 16: gemaal.v1.ResolveResponse
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 18: google.protobuf.Duration
+	(*DecommissionRequest)(nil),   // 15: gemaal.v1.DecommissionRequest
+	(*DecommissionResponse)(nil),  // 16: gemaal.v1.DecommissionResponse
+	(*ResolveRequest)(nil),        // 17: gemaal.v1.ResolveRequest
+	(*ResolveResponse)(nil),       // 18: gemaal.v1.ResolveResponse
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 20: google.protobuf.Duration
 }
 var file_gemaal_v1_gemaal_proto_depIdxs = []int32{
-	17, // 0: gemaal.v1.Tenant.last_activity:type_name -> google.protobuf.Timestamp
-	18, // 1: gemaal.v1.Tenant.age:type_name -> google.protobuf.Duration
-	18, // 2: gemaal.v1.Tenant.ttl:type_name -> google.protobuf.Duration
-	17, // 3: gemaal.v1.Tenant.keep_until:type_name -> google.protobuf.Timestamp
+	19, // 0: gemaal.v1.Tenant.last_activity:type_name -> google.protobuf.Timestamp
+	20, // 1: gemaal.v1.Tenant.age:type_name -> google.protobuf.Duration
+	20, // 2: gemaal.v1.Tenant.ttl:type_name -> google.protobuf.Duration
+	19, // 3: gemaal.v1.Tenant.keep_until:type_name -> google.protobuf.Timestamp
 	0,  // 4: gemaal.v1.Tenant.pending_action:type_name -> gemaal.v1.ActionKind
 	0,  // 5: gemaal.v1.PlannedAction.kind:type_name -> gemaal.v1.ActionKind
-	17, // 6: gemaal.v1.PlannedAction.not_before:type_name -> google.protobuf.Timestamp
+	19, // 6: gemaal.v1.PlannedAction.not_before:type_name -> google.protobuf.Timestamp
 	2,  // 7: gemaal.v1.PlanResponse.actions:type_name -> gemaal.v1.PlannedAction
-	17, // 8: gemaal.v1.PlanResponse.computed_at:type_name -> google.protobuf.Timestamp
+	19, // 8: gemaal.v1.PlanResponse.computed_at:type_name -> google.protobuf.Timestamp
 	1,  // 9: gemaal.v1.ListTenantsResponse.tenants:type_name -> gemaal.v1.Tenant
 	7,  // 10: gemaal.v1.ListTenantsResponse.unreadable:type_name -> gemaal.v1.NamespaceProblem
-	18, // 11: gemaal.v1.CheckoutRequest.duration:type_name -> google.protobuf.Duration
+	20, // 11: gemaal.v1.CheckoutRequest.duration:type_name -> google.protobuf.Duration
 	1,  // 12: gemaal.v1.CheckoutResponse.tenant:type_name -> gemaal.v1.Tenant
-	18, // 13: gemaal.v1.ExtendRequest.duration:type_name -> google.protobuf.Duration
+	20, // 13: gemaal.v1.ExtendRequest.duration:type_name -> google.protobuf.Duration
 	1,  // 14: gemaal.v1.ExtendResponse.tenant:type_name -> gemaal.v1.Tenant
 	2,  // 15: gemaal.v1.SweepResult.action:type_name -> gemaal.v1.PlannedAction
 	13, // 16: gemaal.v1.SweepResponse.results:type_name -> gemaal.v1.SweepResult
-	3,  // 17: gemaal.v1.GemaalService.Plan:input_type -> gemaal.v1.PlanRequest
-	5,  // 18: gemaal.v1.GemaalService.ListTenants:input_type -> gemaal.v1.ListTenantsRequest
-	8,  // 19: gemaal.v1.GemaalService.Checkout:input_type -> gemaal.v1.CheckoutRequest
-	10, // 20: gemaal.v1.GemaalService.Extend:input_type -> gemaal.v1.ExtendRequest
-	12, // 21: gemaal.v1.GemaalService.Sweep:input_type -> gemaal.v1.SweepRequest
-	15, // 22: gemaal.v1.GemaalService.Resolve:input_type -> gemaal.v1.ResolveRequest
-	4,  // 23: gemaal.v1.GemaalService.Plan:output_type -> gemaal.v1.PlanResponse
-	6,  // 24: gemaal.v1.GemaalService.ListTenants:output_type -> gemaal.v1.ListTenantsResponse
-	9,  // 25: gemaal.v1.GemaalService.Checkout:output_type -> gemaal.v1.CheckoutResponse
-	11, // 26: gemaal.v1.GemaalService.Extend:output_type -> gemaal.v1.ExtendResponse
-	14, // 27: gemaal.v1.GemaalService.Sweep:output_type -> gemaal.v1.SweepResponse
-	16, // 28: gemaal.v1.GemaalService.Resolve:output_type -> gemaal.v1.ResolveResponse
-	23, // [23:29] is the sub-list for method output_type
-	17, // [17:23] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	13, // 17: gemaal.v1.DecommissionResponse.results:type_name -> gemaal.v1.SweepResult
+	3,  // 18: gemaal.v1.GemaalService.Plan:input_type -> gemaal.v1.PlanRequest
+	5,  // 19: gemaal.v1.GemaalService.ListTenants:input_type -> gemaal.v1.ListTenantsRequest
+	8,  // 20: gemaal.v1.GemaalService.Checkout:input_type -> gemaal.v1.CheckoutRequest
+	10, // 21: gemaal.v1.GemaalService.Extend:input_type -> gemaal.v1.ExtendRequest
+	12, // 22: gemaal.v1.GemaalService.Sweep:input_type -> gemaal.v1.SweepRequest
+	17, // 23: gemaal.v1.GemaalService.Resolve:input_type -> gemaal.v1.ResolveRequest
+	15, // 24: gemaal.v1.GemaalService.Decommission:input_type -> gemaal.v1.DecommissionRequest
+	4,  // 25: gemaal.v1.GemaalService.Plan:output_type -> gemaal.v1.PlanResponse
+	6,  // 26: gemaal.v1.GemaalService.ListTenants:output_type -> gemaal.v1.ListTenantsResponse
+	9,  // 27: gemaal.v1.GemaalService.Checkout:output_type -> gemaal.v1.CheckoutResponse
+	11, // 28: gemaal.v1.GemaalService.Extend:output_type -> gemaal.v1.ExtendResponse
+	14, // 29: gemaal.v1.GemaalService.Sweep:output_type -> gemaal.v1.SweepResponse
+	18, // 30: gemaal.v1.GemaalService.Resolve:output_type -> gemaal.v1.ResolveResponse
+	16, // 31: gemaal.v1.GemaalService.Decommission:output_type -> gemaal.v1.DecommissionResponse
+	25, // [25:32] is the sub-list for method output_type
+	18, // [18:25] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_gemaal_v1_gemaal_proto_init() }
@@ -1231,7 +1358,7 @@ func file_gemaal_v1_gemaal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gemaal_v1_gemaal_proto_rawDesc), len(file_gemaal_v1_gemaal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

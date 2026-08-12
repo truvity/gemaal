@@ -39,6 +39,17 @@ service GemaalService {
   // identity evidence driver — to the slug and namespace the service's
   // personnel-sourced configuration assigns it.
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
+
+  // Decommission uninstalls ONE tenant's release ring now — the
+  // explicit end-of-life call. The tenant's own keep-until does not
+  // hold it (the caller is stating "done"), but everything else that
+  // guards a sweep guards this: the caller must hold the same
+  // namespace authorization Checkout requires, reach re-derives from
+  // the server's configuration, ring3 drains before ring2, and the
+  // server's dry-run setting wins. It does not consult the harness's
+  // claim Lease: within one's own namespace this is the same power
+  // `gemaalctl uninstall` already grants client-side.
+  rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
 }
 
 // Tenant is one watched installation: its identity plus its ledger state.
@@ -169,6 +180,19 @@ message SweepResult {
 }
 
 message SweepResponse {
+  repeated SweepResult results = 1;
+  bool dry_run = 2;
+}
+
+message DecommissionRequest {
+  string namespace = 1;
+  string release = 2;
+  // Force a dry run even on a server configured to execute; the
+  // reverse is impossible, exactly as with Sweep.
+  bool dry_run = 3;
+}
+
+message DecommissionResponse {
   repeated SweepResult results = 1;
   bool dry_run = 2;
 }

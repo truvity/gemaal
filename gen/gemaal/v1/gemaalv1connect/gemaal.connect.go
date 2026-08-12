@@ -53,6 +53,9 @@ const (
 	GemaalServiceSweepProcedure = "/gemaal.v1.GemaalService/Sweep"
 	// GemaalServiceResolveProcedure is the fully-qualified name of the GemaalService's Resolve RPC.
 	GemaalServiceResolveProcedure = "/gemaal.v1.GemaalService/Resolve"
+	// GemaalServiceDecommissionProcedure is the fully-qualified name of the GemaalService's
+	// Decommission RPC.
+	GemaalServiceDecommissionProcedure = "/gemaal.v1.GemaalService/Decommission"
 )
 
 // GemaalServiceClient is a client for the gemaal.v1.GemaalService service.
@@ -77,6 +80,16 @@ type GemaalServiceClient interface {
 	// identity evidence driver — to the slug and namespace the service's
 	// personnel-sourced configuration assigns it.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// Decommission uninstalls ONE tenant's release ring now — the
+	// explicit end-of-life call. The tenant's own keep-until does not
+	// hold it (the caller is stating "done"), but everything else that
+	// guards a sweep guards this: the caller must hold the same
+	// namespace authorization Checkout requires, reach re-derives from
+	// the server's configuration, ring3 drains before ring2, and the
+	// server's dry-run setting wins. It does not consult the harness's
+	// claim Lease: within one's own namespace this is the same power
+	// `gemaalctl uninstall` already grants client-side.
+	Decommission(context.Context, *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error)
 }
 
 // NewGemaalServiceClient constructs a client for the gemaal.v1.GemaalService service. By default,
@@ -126,17 +139,24 @@ func NewGemaalServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(gemaalServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		decommission: connect.NewClient[v1.DecommissionRequest, v1.DecommissionResponse](
+			httpClient,
+			baseURL+GemaalServiceDecommissionProcedure,
+			connect.WithSchema(gemaalServiceMethods.ByName("Decommission")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // gemaalServiceClient implements GemaalServiceClient.
 type gemaalServiceClient struct {
-	plan        *connect.Client[v1.PlanRequest, v1.PlanResponse]
-	listTenants *connect.Client[v1.ListTenantsRequest, v1.ListTenantsResponse]
-	checkout    *connect.Client[v1.CheckoutRequest, v1.CheckoutResponse]
-	extend      *connect.Client[v1.ExtendRequest, v1.ExtendResponse]
-	sweep       *connect.Client[v1.SweepRequest, v1.SweepResponse]
-	resolve     *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	plan         *connect.Client[v1.PlanRequest, v1.PlanResponse]
+	listTenants  *connect.Client[v1.ListTenantsRequest, v1.ListTenantsResponse]
+	checkout     *connect.Client[v1.CheckoutRequest, v1.CheckoutResponse]
+	extend       *connect.Client[v1.ExtendRequest, v1.ExtendResponse]
+	sweep        *connect.Client[v1.SweepRequest, v1.SweepResponse]
+	resolve      *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	decommission *connect.Client[v1.DecommissionRequest, v1.DecommissionResponse]
 }
 
 // Plan calls gemaal.v1.GemaalService.Plan.
@@ -169,6 +189,11 @@ func (c *gemaalServiceClient) Resolve(ctx context.Context, req *connect.Request[
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// Decommission calls gemaal.v1.GemaalService.Decommission.
+func (c *gemaalServiceClient) Decommission(ctx context.Context, req *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error) {
+	return c.decommission.CallUnary(ctx, req)
+}
+
 // GemaalServiceHandler is an implementation of the gemaal.v1.GemaalService service.
 type GemaalServiceHandler interface {
 	// Plan computes, without side effects, what housekeeping would do right
@@ -191,6 +216,16 @@ type GemaalServiceHandler interface {
 	// identity evidence driver — to the slug and namespace the service's
 	// personnel-sourced configuration assigns it.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// Decommission uninstalls ONE tenant's release ring now — the
+	// explicit end-of-life call. The tenant's own keep-until does not
+	// hold it (the caller is stating "done"), but everything else that
+	// guards a sweep guards this: the caller must hold the same
+	// namespace authorization Checkout requires, reach re-derives from
+	// the server's configuration, ring3 drains before ring2, and the
+	// server's dry-run setting wins. It does not consult the harness's
+	// claim Lease: within one's own namespace this is the same power
+	// `gemaalctl uninstall` already grants client-side.
+	Decommission(context.Context, *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error)
 }
 
 // NewGemaalServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -236,6 +271,12 @@ func NewGemaalServiceHandler(svc GemaalServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(gemaalServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gemaalServiceDecommissionHandler := connect.NewUnaryHandler(
+		GemaalServiceDecommissionProcedure,
+		svc.Decommission,
+		connect.WithSchema(gemaalServiceMethods.ByName("Decommission")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/gemaal.v1.GemaalService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GemaalServicePlanProcedure:
@@ -250,6 +291,8 @@ func NewGemaalServiceHandler(svc GemaalServiceHandler, opts ...connect.HandlerOp
 			gemaalServiceSweepHandler.ServeHTTP(w, r)
 		case GemaalServiceResolveProcedure:
 			gemaalServiceResolveHandler.ServeHTTP(w, r)
+		case GemaalServiceDecommissionProcedure:
+			gemaalServiceDecommissionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -281,4 +324,8 @@ func (UnimplementedGemaalServiceHandler) Sweep(context.Context, *connect.Request
 
 func (UnimplementedGemaalServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.Resolve is not implemented"))
+}
+
+func (UnimplementedGemaalServiceHandler) Decommission(context.Context, *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.Decommission is not implemented"))
 }

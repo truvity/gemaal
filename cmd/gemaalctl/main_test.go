@@ -72,6 +72,10 @@ func (emptyKeeper) Apply(context.Context, *engine.Plan, bool, string) (*engine.S
 
 func (emptyKeeper) StampKeepUntil(context.Context, engine.Tenant, time.Time) error { return nil }
 
+func (emptyKeeper) Decommission(context.Context, string, string, bool) (*engine.SweepRecord, error) {
+	return &engine.SweepRecord{}, nil
+}
+
 // startStubServer serves the service over an empty cluster.
 func startStubServer(t *testing.T) string {
 	t.Helper()

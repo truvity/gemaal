@@ -46,6 +46,10 @@ func (f *fakeKeeper) StampKeepUntil(_ context.Context, tenant engine.Tenant, unt
 	return nil
 }
 
+func (f *fakeKeeper) Decommission(_ context.Context, _, _ string, _ bool) (*engine.SweepRecord, error) {
+	return &engine.SweepRecord{Source: "decommission"}, nil
+}
+
 // ownerJWT is a well-formed (unsigned) gateway-forwarded token — the
 // header identity parses it for display, the fake authenticator accepts
 // it for the mutations.
