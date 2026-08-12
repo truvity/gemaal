@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +41,10 @@ type fakeKeeper struct {
 	stampErr error
 
 	applies []bool // confirm flags, in order
+
+	decommissioned  []string // "<ns>/<rel> confirm=<bool>"
+	decommissionErr error
+	decommissionRec *engine.SweepRecord
 }
 
 func (f *fakeKeeper) View(context.Context) (*engine.View, error) { return f.view, f.viewErr }
@@ -62,6 +67,12 @@ func (f *fakeKeeper) StampKeepUntil(_ context.Context, tenant engine.Tenant, unt
 	f.stamped = append(f.stamped, tenant.String()+" until "+engine.FormatKeepUntil(until))
 
 	return nil
+}
+
+func (f *fakeKeeper) Decommission(_ context.Context, namespace, release string, confirm bool) (*engine.SweepRecord, error) {
+	f.decommissioned = append(f.decommissioned, fmt.Sprintf("%s/%s confirm=%v", namespace, release, confirm))
+
+	return f.decommissionRec, f.decommissionErr
 }
 
 // fakeAuth scripts the authenticator: identities keyed by bearer token.
@@ -511,4 +522,71 @@ func TestPlanFailureIsInternal(t *testing.T) {
 
 	_, err := client.Plan(context.Background(), connect.NewRequest(&gemaalv1.PlanRequest{}))
 	assert.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+}
+
+// --- Decommission ---------------------------------------------------------
+
+// TestDecommissionAuthorizationMatrix: same rule as Checkout — the
+// namespace owner (or an admin) ends their own tenant; nobody else does.
+func TestDecommissionAuthorizationMatrix(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		token    string
+		wantCode connect.Code
+		allowed  bool
+	}{
+		{name: "owner decommissions their namespace", token: "owner-group", allowed: true},
+		{name: "admin decommissions anywhere", token: "admin", allowed: true},
+		{name: "foreigner refused", token: "foreigner", wantCode: connect.CodePermissionDenied},
+		{name: "anonymous refused", token: "", wantCode: connect.CodeUnauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			keeper := &fakeKeeper{decommissionRec: &engine.SweepRecord{At: now, Source: "decommission"}}
+			client, history := newTestService(t, nil, keeper)
+
+			req := connect.NewRequest(&gemaalv1.DecommissionRequest{Namespace: "emp-jdoe", Release: "myapp"})
+			if tc.token != "" {
+				bearer(req, tc.token)
+			}
+
+			_, err := client.Decommission(context.Background(), req)
+
+			if tc.allowed {
+				require.NoError(t, err)
+				assert.NotEmpty(t, keeper.decommissioned)
+				assert.Len(t, history.List(), 1, "an explicit decommission is a history event")
+			} else {
+				require.Equal(t, tc.wantCode, connect.CodeOf(err))
+				assert.Empty(t, keeper.decommissioned, "a refused decommission touches nothing")
+			}
+		})
+	}
+}
+
+// TestDecommissionShadowServerNeverConfirms: the server's dry-run wins —
+// the engine is asked with confirm=false and the response says so.
+func TestDecommissionShadowServerNeverConfirms(t *testing.T) {
+	keeper := &fakeKeeper{decommissionRec: &engine.SweepRecord{At: now, DryRun: true}}
+	client, _ := newTestService(t, nil, keeper)
+
+	req := connect.NewRequest(&gemaalv1.DecommissionRequest{Namespace: "emp-jdoe", Release: "myapp"})
+	bearer(req, "owner-group")
+
+	resp, err := client.Decommission(context.Background(), req)
+	require.NoError(t, err)
+	assert.True(t, resp.Msg.GetDryRun())
+	assert.Equal(t, []string{"emp-jdoe/myapp confirm=false"}, keeper.decommissioned)
+}
+
+// TestDecommissionNoSuchTenantIsNotFound: "already gone" must be
+// distinguishable from "failed to remove".
+func TestDecommissionNoSuchTenantIsNotFound(t *testing.T) {
+	keeper := &fakeKeeper{decommissionErr: fmt.Errorf("wrap: %w", engine.ErrNoSuchTenant)}
+	client, _ := newTestService(t, nil, keeper)
+
+	req := connect.NewRequest(&gemaalv1.DecommissionRequest{Namespace: "emp-jdoe", Release: "ghost"})
+	bearer(req, "owner-group")
+
+	_, err := client.Decommission(context.Background(), req)
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }

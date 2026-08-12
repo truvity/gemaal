@@ -37,6 +37,7 @@ type Housekeeper interface {
 	Plan(ctx context.Context, narrow engine.Narrow) (*engine.Plan, error)
 	Apply(ctx context.Context, plan *engine.Plan, confirm bool, source string) (*engine.SweepRecord, error)
 	StampKeepUntil(ctx context.Context, tenant engine.Tenant, until time.Time) error
+	Decommission(ctx context.Context, namespace, release string, confirm bool) (*engine.SweepRecord, error)
 }
 
 // Authenticator resolves an Authorization header to an identity.
@@ -312,6 +313,75 @@ func (s *Service) Sweep(
 
 	s.deps.Logger.InfoContext(ctx, "sweep executed",
 		slog.String("caller", caller.Subject),
+		slog.Bool("dry_run", dryRun),
+		slog.Int("actions", len(record.Results)),
+	)
+
+	return connect.NewResponse(resp), nil
+}
+
+// Decommission uninstalls one tenant's release ring now. Same
+// authorization as Checkout — this is a namespace owner ending their
+// own tenant, the server-side twin of `gemaalctl uninstall`. The
+// tenant's keep-until does not hold it; the server's dry-run wins.
+func (s *Service) Decommission(
+	ctx context.Context,
+	req *connect.Request[gemaalv1.DecommissionRequest],
+) (*connect.Response[gemaalv1.DecommissionResponse], error) {
+	caller, err := s.authenticate(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+
+	namespace, release := req.Msg.GetNamespace(), req.Msg.GetRelease()
+
+	if err := validName(namespace, "namespace"); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	if err := validName(release, "release"); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	if err := s.authorizeHold(caller, namespace); err != nil {
+		return nil, err
+	}
+
+	// The server's setting wins; a request can only make things drier.
+	dryRun := *s.deps.Config.DryRun || req.Msg.GetDryRun()
+
+	record, err := s.deps.Keeper.Decommission(ctx, namespace, release, !dryRun)
+	if record != nil {
+		// Add, not Record: an explicit decommission is an event even
+		// when it deletes nothing.
+		s.deps.History.Add(*record)
+	}
+
+	if err != nil {
+		if errors.Is(err, engine.ErrNoSuchTenant) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+
+		s.deps.Logger.ErrorContext(ctx, "decommission failed",
+			slog.String("caller", caller.Subject),
+			slog.String("tenant", namespace+"/"+release),
+			slog.Any("error", err))
+
+		return nil, connect.NewError(connect.CodeInternal, errors.New("decommission failed executing"))
+	}
+
+	resp := &gemaalv1.DecommissionResponse{DryRun: dryRun}
+	for i := range record.Results {
+		resp.Results = append(resp.Results, &gemaalv1.SweepResult{
+			Action:   plannedAction(&record.Results[i].Action),
+			Executed: record.Results[i].Executed,
+			Error:    record.Results[i].Err,
+		})
+	}
+
+	s.deps.Logger.InfoContext(ctx, "tenant decommissioned",
+		slog.String("caller", caller.Subject),
+		slog.String("tenant", namespace+"/"+release),
 		slog.Bool("dry_run", dryRun),
 		slog.Int("actions", len(record.Results)),
 	)
