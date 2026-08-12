@@ -61,6 +61,14 @@
             <input type="hidden" name="duration" value="8h">
             <button type="submit">Extend 8h</button>
           </form>
+          <form class="inline" method="post" action="/tenants/decommission">
+            <input type="hidden" name="namespace" value="{{.Namespace}}">
+            <input type="hidden" name="release" value="{{.Release}}">
+            <label class="confirm" title="destroy needs this ticked — the CSP allows no confirm() dialog">
+              <input type="checkbox" name="confirm" value="yes" required> sure
+            </label>
+            <button type="submit" class="danger">Destroy</button>
+          </form>
         </td>
       </tr>
     {{end}}
