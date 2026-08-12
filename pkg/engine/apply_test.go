@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,6 +143,55 @@ func TestApplyRecordsPartialFailures(t *testing.T) {
 
 	assert.Equal(t, 1, failed, "the failure is recorded; the rest of the plan still ran")
 	assert.Contains(t, helm.uninstalled, "emp-idle/myapp-infra")
+}
+
+// TestHistoryRecord_CollapsesQuietRuns: a day of no-op loop ticks must
+// be ONE line refreshing its timestamp, not a buffer full of silence —
+// while a real sweep breaks the run so the timeline stays honest.
+func TestHistoryRecord_CollapsesQuietRuns(t *testing.T) {
+	h := engine.NewHistory(10)
+
+	t1 := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	t2 := t1.Add(time.Minute)
+	t3 := t2.Add(time.Minute)
+
+	h.Record(engine.SweepRecord{At: t1, Source: "loop", Kept: 3})
+	h.Record(engine.SweepRecord{At: t2, Source: "loop", Kept: 4})
+
+	records := h.List()
+	require.Len(t, records, 1, "consecutive quiet ticks collapse")
+	assert.Equal(t, 2, records[0].QuietTicks)
+	assert.Equal(t, t2, records[0].At, "the newest tick's timestamp proves the loop is alive")
+	assert.Equal(t, 4, records[0].Kept, "kept follows the latest pass")
+
+	// A real sweep breaks the quiet run...
+	h.Record(engine.SweepRecord{At: t3, Source: "loop",
+		Results: []engine.ActionResult{{Executed: true}}})
+	// ...and the next quiet tick starts a NEW aggregate instead of
+	// reaching across it.
+	h.Record(engine.SweepRecord{At: t3.Add(time.Minute), Source: "loop"})
+
+	records = h.List()
+	require.Len(t, records, 3)
+	assert.Equal(t, 1, records[0].QuietTicks, "fresh aggregate after the real sweep")
+	assert.Zero(t, records[1].QuietTicks, "the real sweep is a normal record")
+	assert.Equal(t, 2, records[2].QuietTicks, "the earlier run stays closed")
+}
+
+// TestHistoryRecord_ProblemsAreNotQuiet: an enumeration problem is a
+// finding even with nothing planned — it must not vanish into a quiet
+// aggregate.
+func TestHistoryRecord_ProblemsAreNotQuiet(t *testing.T) {
+	h := engine.NewHistory(10)
+
+	h.Record(engine.SweepRecord{Source: "loop",
+		Problems: []engine.TargetProblem{{}}})
+	h.Record(engine.SweepRecord{Source: "loop"})
+
+	records := h.List()
+	require.Len(t, records, 2)
+	assert.Zero(t, records[1].QuietTicks, "the problem record is a normal one")
+	assert.Equal(t, 1, records[0].QuietTicks)
 }
 
 func TestHistoryBoundsAndOrders(t *testing.T) {

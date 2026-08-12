@@ -43,3 +43,39 @@ func (h *History) List() []SweepRecord {
 
 	return out
 }
+
+// Record adds a loop tick's record, collapsing consecutive quiet ones.
+// A quiet tick — nothing planned, no enumeration problems — refreshes
+// the head quiet record (count + timestamp) instead of consuming a slot,
+// so the bounded buffer keeps real sweeps instead of a wall of no-ops,
+// and the panel still shows when the loop last ran. RPC-sourced records
+// go through Add unconditionally: an operator's explicit sweep is an
+// event even when it does nothing.
+func (h *History) Record(record SweepRecord) {
+	quiet := len(record.Results) == 0 && len(record.Problems) == 0
+	if !quiet {
+		h.Add(record)
+
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if len(h.records) > 0 && h.records[0].QuietTicks > 0 {
+		head := &h.records[0]
+		head.QuietTicks++
+		head.At = record.At
+		head.DryRun = record.DryRun
+		head.Kept = record.Kept
+
+		return
+	}
+
+	record.QuietTicks = 1
+	h.records = append([]SweepRecord{record}, h.records...)
+
+	if len(h.records) > h.cap {
+		h.records = h.records[:h.cap]
+	}
+}

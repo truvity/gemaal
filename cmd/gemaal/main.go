@@ -159,7 +159,9 @@ func tick(ctx context.Context, cfg *config.Config, eng *engine.Engine, history *
 
 	record, err := eng.Apply(ctx, plan, !*cfg.DryRun, "loop")
 	if record != nil {
-		history.Add(*record)
+		// Record, not Add: consecutive quiet ticks collapse into one
+		// history line so the bounded buffer keeps the real sweeps.
+		history.Record(*record)
 	}
 
 	if err != nil {

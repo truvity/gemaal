@@ -209,7 +209,10 @@ type sweepRow struct {
 	Failed   int
 	Kept     int
 	Problems int
-	Details  []sweepDetail
+	// Quiet aggregates consecutive no-op loop ticks (History.Record):
+	// 0 renders a normal row; N>0 renders one "quiet ×N" row.
+	Quiet   int
+	Details []sweepDetail
 }
 
 type sweepDetail struct {
@@ -280,10 +283,15 @@ func (p *Panel) handleSweeps(w http.ResponseWriter, r *http.Request) {
 			Actions:  len(record.Results),
 			Kept:     record.Kept,
 			Problems: len(record.Problems),
+			Quiet:    record.QuietTicks,
 		}
 
 		if record.DryRun {
 			row.Mode = "dry-run"
+		}
+
+		if record.QuietTicks > 0 {
+			row.Mode = "quiet"
 		}
 
 		for i := range record.Results {

@@ -43,6 +43,12 @@ type (
 		Problems []TargetProblem `json:"problems,omitempty"`
 		// Kept counts the items considered and spared.
 		Kept int `json:"kept"`
+		// QuietTicks aggregates consecutive no-op loop ticks into one
+		// record: 0 is a normal record; N>0 says "N quiet passes ending
+		// At". Collapsed by History.Record so a day of silence is one
+		// line, not a hundred — while the newest At still proves the
+		// loop is alive.
+		QuietTicks int `json:"quiet_ticks,omitempty"`
 	}
 )
 
