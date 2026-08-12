@@ -52,7 +52,7 @@ func TestRunZeroSuiteExportsAndPassesTheCodeThrough(t *testing.T) {
 
 	m := &fakeMain{code: 3}
 
-	code := Run(m, Suite{Options: standing()})
+	code := Run(m, Suite{Cluster: &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}}, Options: standing()})
 
 	assert.Equal(t, 3, code)
 	assert.True(t, m.ran)
@@ -67,7 +67,7 @@ func TestRunRefusesAnUnresolvableTenant(t *testing.T) {
 	m := &fakeMain{}
 
 	// A namespace but no release: resolution fails before the tests run.
-	code := Run(m, Suite{Options: Options{Namespace: "emp-jdoe"}})
+	code := Run(m, Suite{Cluster: &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}}, Options: Options{Namespace: "emp-jdoe"}})
 
 	assert.Equal(t, 1, code)
 	assert.False(t, m.ran, "the tests must not run inside an unresolved tenant")
@@ -80,6 +80,7 @@ func TestRunPhaseOrder(t *testing.T) {
 	m := &fakeMain{}
 
 	code := Run(m, Suite{
+		Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options:  standing(),
 		Build:    r.hook("build"),
 		Deploy:   r.hook("deploy"),
@@ -102,6 +103,7 @@ func TestRunHandsTheClusterAndTenantToHooks(t *testing.T) {
 	)
 
 	code := Run(&fakeMain{}, Suite{
+		Cluster: &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options: standing(),
 		Setup: []Hook{func(_ context.Context, cluster *Cluster, tenant Tenant) error {
 			gotCluster, gotTenant = cluster, tenant
@@ -161,6 +163,7 @@ func TestRunSkipFlags(t *testing.T) {
 			m := &fakeMain{}
 
 			code := Run(m, Suite{
+				Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 				Options:  standing(),
 				Build:    r.hook("build"),
 				Deploy:   r.hook("deploy"),
@@ -183,6 +186,7 @@ func TestRunRefusesAnUnparseableSkipFlag(t *testing.T) {
 	m := &fakeMain{}
 
 	code := Run(m, Suite{
+		Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options:  standing(),
 		Deploy:   r.hook("deploy"),
 		Teardown: []Hook{r.hook("teardown")},
@@ -201,6 +205,7 @@ func TestRunDeployFailureStillTearsDown(t *testing.T) {
 	m := &fakeMain{}
 
 	code := Run(m, Suite{
+		Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options:  standing(),
 		Build:    r.hook("build"),
 		Deploy:   r.failing("deploy", errors.New("helm exploded")),
@@ -221,6 +226,7 @@ func TestRunSetupFailureStillTearsDown(t *testing.T) {
 	m := &fakeMain{}
 
 	code := Run(m, Suite{
+		Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options:  standing(),
 		Setup:    []Hook{r.failing("setup", errors.New("service never became ready"))},
 		Teardown: []Hook{r.hook("teardown")},
@@ -238,6 +244,7 @@ func TestRunTeardownErrorDoesNotOverrideTheTestVerdict(t *testing.T) {
 	m := &fakeMain{code: 0}
 
 	code := Run(m, Suite{
+		Cluster:  &Cluster{Kubecontext: "devel@oidc", Runner: &stubRunner{}},
 		Options:  standing(),
 		Teardown: []Hook{r.failing("teardown-1", errors.New("finalizer stuck")), r.hook("teardown-2")},
 	})

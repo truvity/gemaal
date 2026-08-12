@@ -20,6 +20,12 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get, list, watch, patch]
+  # The harness's claim Leases: Decommission refuses while one is LIVE
+  # (a suite is running against the tenant). Read-only — the service
+  # never writes claims, it only respects them.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get]
   - apiGroups: [authentication.k8s.io]
     resources: [tokenreviews]
     verbs: [create]

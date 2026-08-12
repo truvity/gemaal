@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // RuleDecommission names the explicit end-of-life rule: a caller said
@@ -17,6 +18,21 @@ const RuleDecommission Rule = "decommission"
 // live view — already gone, or never there. Distinct from an execution
 // failure: there is nothing to do, and the caller should know which.
 var ErrNoSuchTenant = errors.New("no such tenant")
+
+// ErrTenantClaimed refuses a Decommission while a harness claim Lease is
+// LIVE: someone's suite is running against the tenant right now, and
+// yanking the releases mid-run hands them exactly the race the claim
+// exists to prevent. The holder is named so "refused" is actionable.
+type ErrTenantClaimed struct {
+	Tenant Tenant
+	Holder string
+}
+
+func (e ErrTenantClaimed) Error() string {
+	return fmt.Sprintf(
+		"tenant %s is claimed by %q — a suite is running against it; decommission after it finishes (an abandoned claim frees itself within its lease duration)",
+		e.Tenant, e.Holder)
+}
 
 // Decommission plans and applies the deletion of ONE tenant's release
 // ring, now.
@@ -57,6 +73,18 @@ func (e *Engine) Decommission(ctx context.Context, namespace, release string, co
 
 	if target == nil {
 		return nil, fmt.Errorf("%w: %s/%s has no releases in the live view", ErrNoSuchTenant, namespace, release)
+	}
+
+	// A LIVE harness claim protects the tenant — the same arbitration
+	// the suites give each other. Absent, expired or unreadable leases
+	// do not block: the claim is protection for a RUNNING suite, and a
+	// cluster where leases cannot be read must degrade to the
+	// pre-claim behavior, not brick the explicit path.
+	if lease, err := e.Kube.Lease(ctx, namespace, "gemaal-claim-"+release); err == nil && lease.Holder != "" {
+		expiry := lease.RenewTime.Add(time.Duration(lease.DurationSeconds) * time.Second)
+		if view.At.Before(expiry) {
+			return nil, ErrTenantClaimed{Tenant: target.Tenant, Holder: lease.Holder}
+		}
 	}
 
 	plan.Tenants = []TenantState{*target}

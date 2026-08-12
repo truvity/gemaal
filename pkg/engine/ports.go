@@ -57,11 +57,24 @@ type (
 		LastModified time.Time
 	}
 
+	// Lease is the sliver of a coordination.k8s.io Lease the engine
+	// reads: whether a harness claim currently protects a tenant. A
+	// zero Lease means absent.
+	Lease struct {
+		Holder          string
+		RenewTime       time.Time
+		DurationSeconds int
+	}
+
 	// KubeClient is the namespace selector and the ledger's storage.
 	KubeClient interface {
 		// ListTierNamespaces lists the namespaces whose tier label carries
 		// one of the given values — selection by label, never by name.
 		ListTierNamespaces(ctx context.Context, label string, tiers []string) ([]Namespace, error)
+
+		// Lease reads one coordination.k8s.io Lease; absent yields the
+		// zero Lease and no error (absence is an answer, not a failure).
+		Lease(ctx context.Context, namespace, name string) (Lease, error)
 
 		// ReleaseSecrets returns, per release in the namespace, the
 		// NEWEST helm release Secret with its labels.
