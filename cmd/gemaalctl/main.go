@@ -104,6 +104,7 @@ func newCommand() *cli.Command {
 			whoamiCommand(),
 			installCommand(),
 			uninstallCommand(),
+			decommissionCommand(),
 			{
 				Name:  "plan",
 				Usage: "ask the service what housekeeping would do right now (no side effects)",
@@ -192,49 +193,6 @@ func newCommand() *cli.Command {
 						resp.Msg.GetTenant().GetNamespace(),
 						resp.Msg.GetTenant().GetRelease(),
 						resp.Msg.GetTenant().GetKeepUntil().AsTime().Format(time.RFC3339))
-
-					return nil
-				},
-			},
-			{
-				Name: "decommission",
-				Usage: "uninstall a tenant's release ring NOW via the service — the explicit end-of-life call; " +
-					"the tenant's own keep-until does not hold it, the server's dry-run setting wins",
-				Flags: []cli.Flag{
-					serverFlag(),
-					&cli.StringFlag{Name: "namespace", Usage: "tenant namespace", Required: true},
-					&cli.StringFlag{Name: "release", Usage: "tenant release", Required: true},
-					&cli.BoolFlag{Name: "dry-run", Usage: "report what would go without uninstalling"},
-				},
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					client := newClient(cmd.String("server"))
-
-					resp, err := client.Decommission(ctx, connect.NewRequest(&gemaalv1.DecommissionRequest{
-						Namespace: cmd.String("namespace"),
-						Release:   cmd.String("release"),
-						DryRun:    cmd.Bool("dry-run"),
-					}))
-					if err != nil {
-						return err
-					}
-
-					mode := "uninstalled"
-					if resp.Msg.GetDryRun() {
-						mode = "would uninstall"
-					}
-
-					for _, r := range resp.Msg.GetResults() {
-						line := fmt.Sprintf("%s %s/%s", mode, r.GetAction().GetNamespace(), r.GetAction().GetRelease())
-						if r.GetError() != "" {
-							line += " — FAILED: " + r.GetError()
-						}
-
-						fmt.Println(line)
-					}
-
-					if len(resp.Msg.GetResults()) == 0 {
-						fmt.Println("nothing to do")
-					}
 
 					return nil
 				},

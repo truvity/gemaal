@@ -223,6 +223,13 @@ func (e *Engine) namespaceTenants(ctx context.Context, ns Namespace) ([]TenantSt
 
 		e.mergeLedger(&state, byRelease)
 
+		// The claim Lease, read fail-OPEN: one kubectl get per tenant
+		// per tick — tenant counts are small, and batching would buy
+		// nothing but a second parsing path.
+		if lease, err := e.Kube.Lease(ctx, ns.Name, "gemaal-claim-"+install); err == nil {
+			state.Claim = lease
+		}
+
 		// Effective TTL: the ledger's own when present, the tier default
 		// otherwise. The tier is configured — View only admits configured
 		// tiers — so the default always exists.

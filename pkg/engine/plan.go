@@ -25,6 +25,13 @@ const (
 	KeepReleaseLive KeepReason = "release-live"
 	// KeepWithinTTL — a tenant that has not yet outlived its TTL.
 	KeepWithinTTL KeepReason = "within-ttl"
+	// KeepClaimLive — a live harness claim Lease holds the tenant: a
+	// suite is running against it RIGHT NOW, and TTL age is measured
+	// from helm activity, which a SKIP_DEPLOY run against an old
+	// standing install never refreshes. Without this, the sweeper was
+	// the one actor the claim did not bind.
+	KeepClaimLive KeepReason = "claim-live"
+
 	// KeepUntilHolds — a keep-until label in the future holds the tenant,
 	// whatever its TTL says.
 	KeepUntilHolds KeepReason = "keep-until-holds"
@@ -113,6 +120,12 @@ type (
 
 		// TTLSource says which: "label" or "tier-default".
 		TTLSource string `json:"ttl_source" yaml:"ttlSource"`
+
+		// Claim is the tenant's harness claim Lease, zero when absent
+		// or unreadable — the lease read fails OPEN, like everywhere
+		// else claims are consulted: they protect a running suite, and
+		// an unreadable lease must degrade to pre-claim behavior.
+		Claim Lease `json:"claim,omitempty" yaml:"claim,omitempty"`
 	}
 
 	// Item is one addressable unit the plan speaks about.
@@ -187,6 +200,16 @@ func (t Tenant) String() string { return t.Namespace + "/" + t.Release }
 
 // Age is now minus last activity.
 func (s TenantState) Age(at time.Time) time.Duration { return at.Sub(s.LastActivity) }
+
+// ClaimLive reports whether the tenant's harness claim Lease is live at
+// the given instant: a holder is named and the renewal has not aged out.
+func (s TenantState) ClaimLive(at time.Time) bool {
+	if s.Claim.Holder == "" {
+		return false
+	}
+
+	return at.Before(s.Claim.RenewTime.Add(time.Duration(s.Claim.DurationSeconds) * time.Second))
+}
 
 // Held reports whether a keep-until (or an unparseable ledger, which is
 // held on principle) protects the tenant at the given instant.

@@ -134,6 +134,8 @@ func (e *Engine) classifyTenant(at time.Time, tenant *TenantState, plan *Plan) {
 			})
 		case tenant.Held(at):
 			plan.Keep = append(plan.Keep, Kept{Item: item, Reason: KeepUntilHolds})
+		case tenant.ClaimLive(at):
+			plan.Keep = append(plan.Keep, Kept{Item: item, Reason: KeepClaimLive})
 		case age <= tenant.TTL:
 			plan.Keep = append(plan.Keep, Kept{Item: item, Reason: KeepWithinTTL})
 		default:
