@@ -11,11 +11,13 @@
 <div class="card">
   <p>
     <strong>{{.At}}</strong>
-    {{if eq .Mode "dry-run"}}<span class="badge warn">dry-run</span>
+    {{if eq .Mode "quiet"}}<span class="badge ok">quiet ×{{.Quiet}}</span>
+    {{else if eq .Mode "dry-run"}}<span class="badge warn">dry-run</span>
     {{else}}<span class="badge danger">executed</span>{{end}}
     <span class="badge ok">{{.Source}}</span>
-    <span class="muted">{{.Actions}} action(s), {{.Executed}} executed, {{.Failed}} failed,
-      {{.Kept}} kept, {{.Problems}} problem(s)</span>
+    {{if eq .Mode "quiet"}}<span class="muted">{{.Quiet}} pass(es) with nothing to do, {{.Kept}} kept on the last</span>
+    {{else}}<span class="muted">{{.Actions}} action(s), {{.Executed}} executed, {{.Failed}} failed,
+      {{.Kept}} kept, {{.Problems}} problem(s)</span>{{end}}
   </p>
   {{if .Details}}
   <details>
