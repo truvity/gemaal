@@ -99,6 +99,7 @@ func (p *Panel) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /sweeps", p.harden(p.handleSweeps))
 	mux.HandleFunc("POST /tenants/checkout", p.harden(p.requireSameOrigin(p.handleHold("checkout"))))
 	mux.HandleFunc("POST /tenants/extend", p.harden(p.requireSameOrigin(p.handleHold("extend"))))
+	mux.HandleFunc("POST /tenants/decommission", p.harden(p.requireSameOrigin(p.handleDecommission)))
 }
 
 // harden sets the response-hardening headers on every console page. The
@@ -354,6 +355,46 @@ func (p *Panel) handleHold(kind string) http.HandlerFunc {
 	}
 }
 
+// handleDecommission posts the form into the service's own Decommission
+// — same handler, same authn/authz, the browser's forwarded
+// Authorization riding along. The CSP forbids scripts, so the
+// destructive-action guard is pure HTML: a required checkbox in the
+// form, re-checked here because a form can be forged without the UI.
+func (p *Panel) handleDecommission(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		p.renderError(w, r, http.StatusBadRequest, "unreadable form")
+
+		return
+	}
+
+	if r.PostFormValue("confirm") == "" {
+		p.redirect(w, r, "", "destroy needs its confirmation box ticked")
+
+		return
+	}
+
+	namespace := r.PostFormValue("namespace")
+	release := r.PostFormValue("release")
+
+	req := connect.NewRequest(&gemaalv1.DecommissionRequest{Namespace: namespace, Release: release})
+	req.Header().Set("Authorization", r.Header.Get("Authorization"))
+
+	resp, err := p.svc.Decommission(r.Context(), req)
+	if err != nil {
+		p.redirect(w, r, "", holdError(err))
+
+		return
+	}
+
+	mode := "destroyed"
+	if resp.Msg.GetDryRun() {
+		mode = "dry-run: would destroy"
+	}
+
+	p.redirect(w, r, fmt.Sprintf("%s %s/%s (%d release(s))",
+		mode, namespace, release, len(resp.Msg.GetResults())), "")
+}
+
 // callHold speaks to the service in-process.
 func (p *Panel) callHold(
 	ctx context.Context,
@@ -395,7 +436,8 @@ func holdError(err error) string {
 	switch cerr.Code() {
 	case connect.CodeUnauthenticated:
 		return "not signed in (the gateway forwarded no usable identity)"
-	case connect.CodePermissionDenied, connect.CodeNotFound, connect.CodeInvalidArgument:
+	case connect.CodePermissionDenied, connect.CodeNotFound, connect.CodeInvalidArgument,
+		connect.CodeFailedPrecondition: // a live claim — the message names the holder
 		return cerr.Message()
 	default:
 		return "the request failed"

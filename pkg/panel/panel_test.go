@@ -26,8 +26,9 @@ import (
 var now = time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
 
 type fakeKeeper struct {
-	view    *engine.View
-	stamped []string
+	view           *engine.View
+	stamped        []string
+	decommissioned []string
 }
 
 func (f *fakeKeeper) View(context.Context) (*engine.View, error) { return f.view, nil }
@@ -46,7 +47,9 @@ func (f *fakeKeeper) StampKeepUntil(_ context.Context, tenant engine.Tenant, unt
 	return nil
 }
 
-func (f *fakeKeeper) Decommission(_ context.Context, _, _ string, _ bool) (*engine.SweepRecord, error) {
+func (f *fakeKeeper) Decommission(_ context.Context, namespace, release string, _ bool) (*engine.SweepRecord, error) {
+	f.decommissioned = append(f.decommissioned, namespace+"/"+release)
+
 	return &engine.SweepRecord{Source: "decommission"}, nil
 }
 
@@ -422,4 +425,55 @@ func TestTemplateEscapesTenantNames(t *testing.T) {
 	html := body(t, get(t, server, "/", nil))
 	assert.NotContains(t, html, "<script>alert(1)</script>")
 	assert.Contains(t, html, "&lt;script&gt;")
+}
+
+// TestPanelDestroyRequiresTheConfirmBox: the CSP forbids scripts, so the
+// destructive guard is a required checkbox — and it must hold server-side
+// too, because a form can be forged without the UI.
+func TestPanelDestroyRequiresTheConfirmBox(t *testing.T) {
+	keeper := &fakeKeeper{view: testView()}
+	server, _ := newTestPanel(t, keeper)
+
+	resp := post(t, server, "/tenants/decommission", url.Values{
+		"namespace": {"emp-jdoe"}, "release": {"myapp"},
+	}, http.Header{
+		"Authorization":  {"Bearer " + ownerJWT},
+		"Sec-Fetch-Site": {"same-origin"},
+	})
+
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Location"), "confirmation+box",
+		"an unticked confirm must bounce with the banner, not destroy")
+}
+
+// TestPanelDestroyPostsThroughTheService: the button is the service's
+// own Decommission with the forwarded identity — same authn, same authz.
+func TestPanelDestroyPostsThroughTheService(t *testing.T) {
+	keeper := &fakeKeeper{view: testView()}
+	server, _ := newTestPanel(t, keeper)
+
+	resp := post(t, server, "/tenants/decommission", url.Values{
+		"namespace": {"emp-jdoe"}, "release": {"myapp"}, "confirm": {"yes"},
+	}, http.Header{
+		"Authorization":  {"Bearer " + ownerJWT},
+		"Sec-Fetch-Site": {"same-origin"},
+	})
+
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Location"), "destroy", "the banner reports the outcome")
+	assert.Equal(t, []string{"emp-jdoe/myapp"}, keeper.decommissioned,
+		"the engine must actually have been asked — a banner alone proves nothing")
+}
+
+// TestPanelDestroyRendersOnTheTenantsPage: the form ships in the row.
+func TestPanelDestroyRendersOnTheTenantsPage(t *testing.T) {
+	server, _ := newTestPanel(t, &fakeKeeper{view: testView()})
+
+	resp := get(t, server, "/", http.Header{"Authorization": {"Bearer " + ownerJWT}})
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	html := string(body)
+	assert.Contains(t, html, `action="/tenants/decommission"`)
+	assert.Contains(t, html, `name="confirm"`, "the pure-HTML guard must ship with the form")
 }
