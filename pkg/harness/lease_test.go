@@ -165,10 +165,14 @@ func TestClaimRelease_OnlyDeletesOwn(t *testing.T) {
 // allocates the next lane and re-exports it, so the suite runs against
 // the install that actually claimed.
 func TestClaimWithAllocation_WalksDerivedLanes(t *testing.T) {
-	// Shield the process env: Export writes these.
+	// Shield the process env: Export writes the GEMAAL_* trio, and the
+	// CI-derivation variables disable allocation by design — a CI runner
+	// executing THIS test must not veto the scenario it is testing.
 	t.Setenv(EnvNamespace, "")
 	t.Setenv(EnvRelease, "")
 	t.Setenv(EnvKubecontext, "")
+	t.Setenv(EnvCIRunNumber, "")
+	t.Setenv(EnvCIRunAttempt, "")
 
 	s := &stubRunner{}
 	// Base lane held LIVE; lane -2 absent (empty output, nil error).
@@ -196,6 +200,8 @@ func TestClaimWithAllocation_NeverSecondGuessesAChoice(t *testing.T) {
 	t.Setenv(EnvNamespace, "")
 	t.Setenv(EnvRelease, "")
 	t.Setenv(EnvKubecontext, "")
+	t.Setenv(EnvCIRunNumber, "")
+	t.Setenv(EnvCIRunAttempt, "")
 
 	s := &stubRunner{}
 	s.on("kubectl get lease gemaal-claim-chosen", leaseJSON("other@host#7", 5*time.Second, 90), nil)
