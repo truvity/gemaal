@@ -28,6 +28,18 @@ type fakeKube struct {
 
 	labeled  []string // "<ns>/<secret> k=v,k=v"
 	labelErr error
+
+	// leases is keyed by "<ns>/<name>"; absent keys read as absent.
+	leases   map[string]engine.Lease
+	leaseErr error
+}
+
+func (f *fakeKube) Lease(_ context.Context, namespace, name string) (engine.Lease, error) {
+	if f.leaseErr != nil {
+		return engine.Lease{}, f.leaseErr
+	}
+
+	return f.leases[namespace+"/"+name], nil
 }
 
 func (f *fakeKube) ListTierNamespaces(_ context.Context, _ string, _ []string) ([]engine.Namespace, error) {

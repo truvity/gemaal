@@ -323,3 +323,50 @@ func parseHelmTime(value string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("unrecognized helm updated timestamp %q", value)
 }
+
+// Lease reads one coordination.k8s.io Lease. --ignore-not-found turns
+// absence into exit 0 with EMPTY output — the only reliable absence
+// signal here: kubectl prints NotFound on stderr, which the runner
+// streams rather than folds into the error (the harness's claim code
+// shipped a lock that never engaged by matching error text; see
+// gemaal#17).
+func (c ExecClient) Lease(ctx context.Context, namespace, name string) (Lease, error) {
+	out, err := c.runner().Output(ctx, c.kubectl(
+		"get", "lease", name,
+		"--namespace", namespace,
+		"--ignore-not-found",
+		"-o", "json",
+	)...)
+	if err != nil {
+		return Lease{}, err
+	}
+
+	if strings.TrimSpace(out) == "" {
+		return Lease{}, nil
+	}
+
+	var lease struct {
+		Spec struct {
+			HolderIdentity       string `json:"holderIdentity"`
+			LeaseDurationSeconds int    `json:"leaseDurationSeconds"`
+			RenewTime            string `json:"renewTime"`
+		} `json:"spec"`
+	}
+
+	if err := json.Unmarshal([]byte(out), &lease); err != nil {
+		return Lease{}, fmt.Errorf("parse lease %s/%s: %w", namespace, name, err)
+	}
+
+	renew, err := time.Parse("2006-01-02T15:04:05.000000Z07:00", lease.Spec.RenewTime)
+	if err != nil {
+		// An unparseable renewal reads as absent-in-time: the liveness
+		// check below treats a zero RenewTime as expired.
+		renew = time.Time{}
+	}
+
+	return Lease{
+		Holder:          lease.Spec.HolderIdentity,
+		RenewTime:       renew,
+		DurationSeconds: lease.Spec.LeaseDurationSeconds,
+	}, nil
+}

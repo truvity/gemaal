@@ -362,6 +362,13 @@ func (s *Service) Decommission(
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		}
 
+		var claimed engine.ErrTenantClaimed
+		if errors.As(err, &claimed) {
+			// A live suite holds the tenant: refusing is the point, and
+			// the named holder makes the refusal actionable.
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+
 		s.deps.Logger.ErrorContext(ctx, "decommission failed",
 			slog.String("caller", caller.Subject),
 			slog.String("tenant", namespace+"/"+release),

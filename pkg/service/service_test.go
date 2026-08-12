@@ -590,3 +590,21 @@ func TestDecommissionNoSuchTenantIsNotFound(t *testing.T) {
 	_, err := client.Decommission(context.Background(), req)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
+
+// TestDecommissionClaimedTenantIsFailedPrecondition: a live suite's
+// claim refuses the call with the holder named — actionable, and
+// distinct from not-found and from execution failure.
+func TestDecommissionClaimedTenantIsFailedPrecondition(t *testing.T) {
+	keeper := &fakeKeeper{decommissionErr: engine.ErrTenantClaimed{
+		Tenant: engine.Tenant{Namespace: "emp-jdoe", Release: "myapp"},
+		Holder: "other@host#7",
+	}}
+	client, _ := newTestService(t, nil, keeper)
+
+	req := connect.NewRequest(&gemaalv1.DecommissionRequest{Namespace: "emp-jdoe", Release: "myapp"})
+	bearer(req, "owner-group")
+
+	_, err := client.Decommission(context.Background(), req)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	assert.Contains(t, err.Error(), "other@host#7")
+}

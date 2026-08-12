@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -191,9 +192,12 @@ func (s Suite) run(ctx context.Context, m TestMain) (int, error) {
 	// AGENTS resolving the same release race helm operations and each
 	// teardown uninstalls the other's live install. Claimed even under
 	// EnvSkipDeploy: a reused install must not be raced either. A live
-	// foreign claim fails fast NAMING the holder; lease-API trouble
-	// degrades to a loud warning rather than blocking the suite.
-	claim, err := cluster.ClaimTenant(ctx, tenant, DefaultHolder())
+	// foreign claim on a DERIVED release name allocates the next lane
+	// ({release}-2, -3) instead of failing; on an explicitly chosen
+	// name it fails fast NAMING the holder — a choice is not to be
+	// second-guessed. Lease-API trouble degrades to a loud warning
+	// rather than blocking the suite.
+	claim, tenant, err := s.claimWithAllocation(ctx, cluster, tenant)
 	if err != nil {
 		return 1, err
 	}
@@ -215,6 +219,61 @@ func (s Suite) run(ctx context.Context, m TestMain) (int, error) {
 	}
 
 	return m.Run(), nil
+}
+
+// maxAllocationAttempts bounds the lane walk: the base name plus two
+// alternatives. Three agents at one keyboard is already a crowd; a
+// fourth meets the named-holder error and decides for itself.
+const maxAllocationAttempts = 3
+
+// claimWithAllocation claims the tenant, walking derived-name lanes on
+// contention: {release}, {release}-2, {release}-3.
+//
+// Allocation applies ONLY when the release came from the Options.App
+// default rung — the one rung of the resolution ladder that is derived
+// rather than chosen. Options.Release, $GEMAAL_RELEASE and the CI
+// derivation are decisions, and surprising a decision is worse than
+// failing it (CI already derives unique names; an operator who typed a
+// release meant THAT release). The winning name is re-exported so the
+// suite's endpoint derivations follow the install that actually ran.
+func (s Suite) claimWithAllocation(ctx context.Context, cluster *Cluster, tenant Tenant) (*TenantClaim, Tenant, error) {
+	base := tenant.Release
+
+	for attempt := 1; ; attempt++ {
+		claim, err := cluster.ClaimTenant(ctx, tenant, DefaultHolder())
+
+		var held ErrTenantHeld
+
+		switch {
+		case err == nil:
+			return claim, tenant, nil
+		case !errors.As(err, &held), !releaseAllocatable(s.Options), attempt >= maxAllocationAttempts:
+			return nil, tenant, err
+		}
+
+		next := fmt.Sprintf("%s-%d", base, attempt+1)
+		fmt.Fprintf(os.Stderr, "harness: %s is held by %q — allocating %s/%s\n",
+			tenant, held.Holder, tenant.Namespace, next)
+
+		tenant.Release = next
+		if err := tenant.Export(s.Kubecontext); err != nil {
+			return nil, tenant, err
+		}
+	}
+}
+
+// releaseAllocatable reports whether the resolved release came from the
+// derived Options.App rung — the only rung allocation may walk.
+func releaseAllocatable(o Options) bool {
+	if o.Release != "" || os.Getenv(EnvRelease) != "" {
+		return false
+	}
+
+	if _, ok := ciRelease(); ok {
+		return false
+	}
+
+	return o.App != ""
 }
 
 // installPhases runs Build then Deploy under the skip flags.

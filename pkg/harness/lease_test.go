@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func leaseJSON(holder string, renewedAgo time.Duration, durationSeconds int) string {
@@ -155,4 +159,55 @@ func TestClaimRelease_OnlyDeletesOwn(t *testing.T) {
 			t.Fatalf("must not delete a lease held by another, got %v", s.joined())
 		}
 	}
+}
+
+// TestClaimWithAllocation_WalksDerivedLanes: a held DERIVED release
+// allocates the next lane and re-exports it, so the suite runs against
+// the install that actually claimed.
+func TestClaimWithAllocation_WalksDerivedLanes(t *testing.T) {
+	// Shield the process env: Export writes these.
+	t.Setenv(EnvNamespace, "")
+	t.Setenv(EnvRelease, "")
+	t.Setenv(EnvKubecontext, "")
+
+	s := &stubRunner{}
+	// Base lane held LIVE; lane -2 absent (empty output, nil error).
+	s.on("kubectl get lease gemaal-claim-myapp ", leaseJSON("other@host#7", 5*time.Second, 90), nil)
+	s.on("kubectl get lease gemaal-claim-myapp-2", "", nil)
+
+	suite := Suite{Options: Options{App: "myapp"}}
+	cluster := &Cluster{Runner: s}
+	tenant := Tenant{Namespace: "emp-jdoe", Release: "myapp"}
+
+	claim, got, err := suite.claimWithAllocation(context.Background(), cluster, tenant)
+	require.NoError(t, err)
+	require.NotNil(t, claim, "lane -2 must be claimed, not failed")
+
+	t.Cleanup(func() { claim.cancel(); <-claim.done })
+
+	assert.Equal(t, "myapp-2", got.Release)
+	assert.Equal(t, "myapp-2", os.Getenv(EnvRelease),
+		"the allocated lane must be re-exported for the suite's derivations")
+}
+
+// TestClaimWithAllocation_NeverSecondGuessesAChoice: an explicitly
+// chosen release fails with the named holder — no walking.
+func TestClaimWithAllocation_NeverSecondGuessesAChoice(t *testing.T) {
+	t.Setenv(EnvNamespace, "")
+	t.Setenv(EnvRelease, "")
+	t.Setenv(EnvKubecontext, "")
+
+	s := &stubRunner{}
+	s.on("kubectl get lease gemaal-claim-chosen", leaseJSON("other@host#7", 5*time.Second, 90), nil)
+
+	suite := Suite{Options: Options{Release: "chosen"}}
+	cluster := &Cluster{Runner: s}
+	tenant := Tenant{Namespace: "emp-jdoe", Release: "chosen"}
+
+	_, got, err := suite.claimWithAllocation(context.Background(), cluster, tenant)
+
+	var held ErrTenantHeld
+	require.ErrorAs(t, err, &held)
+	assert.Equal(t, "other@host#7", held.Holder)
+	assert.Equal(t, "chosen", got.Release, "no lane walk on a chosen name")
 }

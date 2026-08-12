@@ -99,3 +99,46 @@ func TestDecommission_ReachStillAuthorizes(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, helm.uninstalled)
 }
+
+// TestDecommission_RefusesALiveClaim: a running suite's claim protects
+// the tenant from the explicit path too — yanking releases mid-run is
+// exactly the race the claim exists to prevent. Expired claims do not
+// block: dead hands release.
+func TestDecommission_RefusesALiveClaim(t *testing.T) {
+	kube, helm, ssm := planFixture()
+	kube.leases = map[string]engine.Lease{
+		"emp-idle/gemaal-claim-myapp": {Holder: "other@host#7", RenewTime: now.Add(-10 * time.Second), DurationSeconds: 90},
+	}
+
+	eng := newEngine(testConfig(t), kube, helm, ssm, nil)
+
+	_, err := eng.Decommission(context.Background(), "emp-idle", "myapp", true)
+
+	var claimed engine.ErrTenantClaimed
+	require.ErrorAs(t, err, &claimed)
+	assert.Equal(t, "other@host#7", claimed.Holder, "the refusal must name the holder")
+	assert.Empty(t, helm.uninstalled)
+
+	// The same claim, expired: the dead hand released it.
+	kube.leases["emp-idle/gemaal-claim-myapp"] = engine.Lease{
+		Holder: "other@host#7", RenewTime: now.Add(-10 * time.Minute), DurationSeconds: 90,
+	}
+
+	_, err = eng.Decommission(context.Background(), "emp-idle", "myapp", true)
+	require.NoError(t, err)
+	assert.NotEmpty(t, helm.uninstalled)
+}
+
+// TestDecommission_UnreadableLeasesFailOpen: the claim is protection for
+// a running suite; a cluster where leases cannot be read must degrade to
+// the pre-claim behavior, not brick the explicit path.
+func TestDecommission_UnreadableLeasesFailOpen(t *testing.T) {
+	kube, helm, ssm := planFixture()
+	kube.leaseErr = context.DeadlineExceeded
+
+	eng := newEngine(testConfig(t), kube, helm, ssm, nil)
+
+	_, err := eng.Decommission(context.Background(), "emp-idle", "myapp", true)
+	require.NoError(t, err)
+	assert.NotEmpty(t, helm.uninstalled)
+}
