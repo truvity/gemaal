@@ -557,7 +557,8 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 }
 
 // recoveryPushAdvice renders one manual helmctl push command for the
-// partial-publish report.
+// partial-publish report. Always names the config's profile: the human
+// re-running this on a laptop is never ambient.
 func (p *Pipeline) recoveryPushAdvice(name, tgz, version string, dest Destination) {
 	p.errf("      %s push --tgz '%s' \\\n", p.helmctlDisplay(), tgz)
 	p.errf("        --registry '%s' --repository %s \\\n", dest.Registry, p.cfg.ChartRepository(name))
