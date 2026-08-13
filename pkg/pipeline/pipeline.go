@@ -62,12 +62,27 @@ type Pipeline struct {
 	stderr io.Writer
 	// root is the git toplevel, resolved by each flow before anything else.
 	root string
+	// ambient drops every AWS profile the config names (no --profile,
+	// no AWS_PROFILE) so credentials resolve through the default chain
+	// — env, container, IMDS. This is the CI face: runners hold
+	// per-phase OIDC role creds in env, and the CLI would IGNORE them
+	// the moment an explicit --profile appears. Laptops keep their
+	// committed profiles; GEMAAL_AWS_AMBIENT flips the same
+	// pipeline.yaml to ambient without a config fork (GEMAAL_* env
+	// always wins — gemaal.yaml doctrine).
+	ambient bool
 }
 
 // New wires a Pipeline. runner executes every external command; stderr
 // receives operator guidance (pass os.Stderr in the CLI).
 func New(cfg *Config, runner Runner, log *slog.Logger, stderr io.Writer) *Pipeline {
-	return &Pipeline{cfg: cfg, runner: runner, log: log, stderr: stderr}
+	ambient := false
+	switch os.Getenv("GEMAAL_AWS_AMBIENT") {
+	case "1", "true", "yes":
+		ambient = true
+	}
+
+	return &Pipeline{cfg: cfg, runner: runner, log: log, stderr: stderr, ambient: ambient}
 }
 
 // errf writes operator-facing prose to stderr, mirroring the scripts'
@@ -118,14 +133,27 @@ func (p *Pipeline) resolveRoot(ctx context.Context) error {
 func (p *Pipeline) destinationEnv(dest Destination, forBuild bool) []string {
 	env := []string{
 		"REGISTRY=" + dest.Registry,
-		"AWS_PROFILE=" + dest.Profile,
 		"AWS_REGION=" + p.cfg.AWSRegion,
+	}
+	if !p.ambient {
+		env = append(env, "AWS_PROFILE="+dest.Profile)
 	}
 	if forBuild {
 		env = append(env, "KO_DOCKER_REPO="+dest.Registry+"/"+p.cfg.Project)
 	}
 
 	return env
+}
+
+// profileArgs renders the --profile pair for aws/helmctl invocations —
+// empty under ambient credentials, where the default chain must see no
+// profile at all (an explicit --profile makes the CLI ignore env creds).
+func (p *Pipeline) profileArgs(dest Destination) []string {
+	if p.ambient {
+		return nil
+	}
+
+	return []string{"--profile", dest.Profile}
 }
 
 // cleanChartsOutput invalidates the previous build's output BEFORE the
@@ -319,11 +347,11 @@ func copyFile(src, dst string) error {
 // --password-stdin`. Every validation runs before this: a bad chart
 // directory never reaches a credential.
 func (p *Pipeline) ecrLogin(ctx context.Context, env []string, dest Destination) error {
-	password, err := p.output(ctx, env, p.cfg.Commands.AWS,
-		"ecr", "get-login-password",
-		"--profile", dest.Profile,
-		"--region", p.cfg.AWSRegion,
-	)
+	args := []string{"ecr", "get-login-password"}
+	args = append(args, p.profileArgs(dest)...)
+	args = append(args, "--region", p.cfg.AWSRegion)
+
+	password, err := p.output(ctx, env, p.cfg.Commands.AWS, args...)
 	if err != nil {
 		return err
 	}
@@ -337,15 +365,19 @@ func (p *Pipeline) ecrLogin(ctx context.Context, env []string, dest Destination)
 
 // pushChart publishes one staged tarball via helmctl push.
 func (p *Pipeline) pushChart(ctx context.Context, env []string, dest Destination, name, tgz, version string) error {
-	return p.run(ctx, env, p.cfg.Commands.Helmctl,
+	args := []string{
 		"push",
 		"--tgz", tgz,
 		"--registry", dest.Registry,
 		"--repository", p.cfg.ChartRepository(name),
-		"--profile", dest.Profile,
+	}
+	args = append(args, p.profileArgs(dest)...)
+	args = append(args,
 		"--name", name,
 		"--version", version,
 	)
+
+	return p.run(ctx, env, p.cfg.Commands.Helmctl, args...)
 }
 
 // helmctlDisplay renders the configured helmctl command for recovery

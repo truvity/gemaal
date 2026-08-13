@@ -27,6 +27,10 @@ releaseBranch: master
 
 awsRegion: eu-central-1
 
+# Profiles are the LAPTOP face. CI sets GEMAAL_AWS_AMBIENT=1 and the
+# pipeline drops them entirely (no AWS_PROFILE, no --profile), letting
+# the default credential chain resolve the runner's ambient identity —
+# an explicit --profile would make the AWS CLI ignore env credentials.
 registries:
   preview:
     registry: 677224894277.dkr.ecr.eu-central-1.amazonaws.com

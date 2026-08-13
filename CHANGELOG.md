@@ -3,6 +3,14 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.12.x
+- **0.12.0** — `GEMAAL_AWS_AMBIENT` (#23): the pipeline drops every AWS
+  profile the config names (no `AWS_PROFILE`, no `--profile`) so
+  credentials resolve through the default chain — env, container/pod
+  identity, IMDS. The CI face: runners hold OIDC role creds the CLI
+  would ignore the moment an explicit `--profile` appears. Laptops keep
+  their committed profiles; the same pipeline.yaml serves both faces.
+
 ## 0.5.x
 - **0.5.0** — the S3 sweep goes live (claims S3 act,
   gitops docs/plans/gemaal-plan.md): `AWSS3Client` — the S3Client the
