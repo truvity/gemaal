@@ -21,11 +21,26 @@ import (
 // a standing namespace has exactly one owner, and everything else is an
 // operator action.
 
-// isAdmin reports whether the caller holds any configured admin group.
-// No admin groups configured means NOBODY is an admin — the safe
-// default.
+// isAdmin reports whether the caller holds any configured admin group
+// or is a configured admin user (subject or email, case-insensitive —
+// the rail for gateway sessions whose tokens carry no groups). Nothing
+// configured means NOBODY is an admin — the safe default.
 func (s *Service) isAdmin(caller authn.Identity) bool {
-	return caller.InAny(s.deps.Config.Authz.AdminGroups)
+	if caller.InAny(s.deps.Config.Authz.AdminGroups) {
+		return true
+	}
+
+	for _, u := range s.deps.Config.Authz.AdminUsers {
+		if u == "" {
+			continue
+		}
+
+		if strings.EqualFold(u, caller.Subject) || (caller.Email != "" && strings.EqualFold(u, caller.Email)) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // callerSlugs collects every slug the caller can prove: the prefixed

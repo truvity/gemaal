@@ -83,6 +83,11 @@ type Authenticator struct {
 
 	// GroupsClaim names the OIDC claim carrying groups ("groups").
 	GroupsClaim string
+
+	// Enricher, when set, fills email and role-derived groups from the
+	// OIDC userinfo endpoint for identities that arrive bare (gateway
+	// sessions carry no email/role claims — the cookie-size ruling).
+	Enricher *UserinfoEnricher
 }
 
 // Authenticate implements the chain.
@@ -101,6 +106,10 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorization string) 
 		}
 
 		if authenticated {
+			if a.Enricher != nil && looksEnrichable(identity) {
+				identity = a.Enricher.Enrich(ctx, token, identity)
+			}
+
 			return identity, nil
 		}
 	}
