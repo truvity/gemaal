@@ -2,6 +2,8 @@ module github.com/truvity/gemaal
 
 go 1.26.5
 
+toolchain go1.26.6
+
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/aws/aws-sdk-go-v2 v1.43.5

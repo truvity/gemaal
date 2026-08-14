@@ -33,8 +33,18 @@ type KubeTokenReviewer struct {
 	// BaseURL is the API server, e.g. "https://10.96.0.1:443".
 	BaseURL string
 
-	// Token authenticates THIS service to the API server.
+	// Token authenticates THIS service to the API server. When
+	// TokenPath is set it is a fallback only (see Review).
 	Token string
+
+	// TokenPath, when non-empty, is re-read on every Review: the
+	// kubelet rotates the projected service-account token in place,
+	// and a token captured once at construction expires with its
+	// first lifetime — observed in devel as every TokenReview
+	// answering 401 from ~24h after pod start (2026-08-13 19:05Z)
+	// until a restart. One small file read per authentication is the
+	// no-client-go price of staying current.
+	TokenPath string
 
 	// Client is the HTTP client (carrying the cluster CA in-cluster).
 	Client *http.Client
@@ -83,6 +93,7 @@ func newTokenReviewer(host, port, tokenPath, caPath string, audiences []string) 
 	return &KubeTokenReviewer{
 		BaseURL:   "https://" + host + ":" + port,
 		Token:     string(bytes.TrimSpace(token)),
+		TokenPath: tokenPath,
 		Client:    client,
 		Audiences: audiences,
 	}, nil
@@ -109,6 +120,24 @@ type tokenReviewSpec struct {
 	Audiences []string `json:"audiences,omitempty"`
 }
 
+// bearer returns the freshest service credential: the projected token
+// file when TokenPath is set (the kubelet rotates it in place), else
+// the static Token. A read failure falls back to the static token so a
+// transient filesystem error degrades to the old behavior instead of
+// failing every authentication outright.
+func (r *KubeTokenReviewer) bearer() string {
+	if r.TokenPath == "" {
+		return r.Token
+	}
+
+	token, err := os.ReadFile(r.TokenPath) //nolint:gosec // constructor-controlled path
+	if err != nil {
+		return r.Token
+	}
+
+	return string(bytes.TrimSpace(token))
+}
+
 // Review implements TokenReviewer.
 func (r *KubeTokenReviewer) Review(ctx context.Context, token string) (Identity, bool, error) {
 	body, err := json.Marshal(tokenReview{
@@ -128,7 +157,7 @@ func (r *KubeTokenReviewer) Review(ctx context.Context, token string) (Identity,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.Token)
+	req.Header.Set("Authorization", "Bearer "+r.bearer())
 
 	client := r.Client
 	if client == nil {
