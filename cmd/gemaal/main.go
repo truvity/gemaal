@@ -140,7 +140,7 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 		History: history,
 	})
 
-	ui, err := panel.New(cfg, log, svc, Version)
+	ui, err := panel.New(cfg, log, svc, auth, Version)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("panel: %w", err)
 	}

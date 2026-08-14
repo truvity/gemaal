@@ -130,7 +130,8 @@ identity:
 		Now:     func() time.Time { return now },
 	})
 
-	ui, err := panel.New(cfg, slog.New(slog.DiscardHandler), svc, "test")
+	ui, err := panel.New(cfg, slog.New(slog.DiscardHandler), svc,
+		&authn.Authenticator{GroupsClaim: cfg.Authz.GroupsClaim}, "test")
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

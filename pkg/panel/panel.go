@@ -57,7 +57,7 @@ type Panel struct {
 // New builds the panel, parsing the embedded templates at startup — a
 // broken template must not reach production as a 500 on the one page
 // nobody opened during the rollout.
-func New(cfg *config.Config, log *slog.Logger, svc *service.Service, version string) (*Panel, error) {
+func New(cfg *config.Config, log *slog.Logger, svc *service.Service, auth *authn.Authenticator, version string) (*Panel, error) {
 	files, err := fs.Glob(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("list templates: %w", err)
@@ -88,7 +88,12 @@ func New(cfg *config.Config, log *slog.Logger, svc *service.Service, version str
 		svc:      svc,
 		version:  version,
 		pages:    pages,
-		identity: &authn.Authenticator{GroupsClaim: cfg.Authz.GroupsClaim},
+		// The SHARED authenticator, deliberately: the panel building
+		// its own bare parser here is how the 0.13.x enrichment kept
+		// being bypassed for the header line — three releases of authn
+		// fixes invisible in the UI because the display path never
+		// called them.
+		identity: auth,
 	}, nil
 }
 
