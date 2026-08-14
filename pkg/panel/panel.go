@@ -168,7 +168,7 @@ func (p *Panel) requireSameOrigin(next http.HandlerFunc) http.HandlerFunc {
 type page struct {
 	Title   string
 	Nav     string
-	Who     string
+	Who     template.HTML
 	Version string
 	DryRun  bool
 	Data    any
@@ -480,7 +480,7 @@ func (p *Panel) render(w http.ResponseWriter, r *http.Request, status int, name 
 
 	pg.Version = p.version
 	pg.DryRun = *p.cfg.DryRun
-	pg.Who = p.who(r)
+	pg.Who = whoHTML(p.who(r))
 
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, "layout", pg); err != nil {
@@ -515,6 +515,17 @@ func (p *Panel) who(r *http.Request) string {
 	}
 
 	return identity.Subject
+}
+
+// whoHTML wraps the escaped identity in Cloudflare's documented
+// email_off escape: the zone's Email Address Obfuscation otherwise
+// rewrites any plaintext email in the proxied HTML to a
+// "[email protected]" decode widget (observed on devel the moment
+// enrichment finally rendered a real address). html/template strips
+// literal comments from templates, so the wrapper must arrive as a
+// trusted snippet with the identity escaped here.
+func whoHTML(who string) template.HTML {
+	return template.HTML("<!--email_off-->" + template.HTMLEscapeString(who) + "<!--/email_off-->") //nolint:gosec // escaped above; comments are the CF escape hatch
 }
 
 // humanDuration renders an age compactly: "3d4h", "26h", "45m".
