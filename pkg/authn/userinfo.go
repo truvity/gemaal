@@ -3,6 +3,9 @@ package authn
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,6 +31,23 @@ type UserinfoEnricher struct {
 
 	// Client is the HTTP client; http.DefaultClient when nil.
 	Client *http.Client
+
+	// Logger surfaces enrichment failures at WARN; slog.Default when
+	// nil. The degrade stays best-effort, but a silent degrade proved
+	// undiagnosable in production (devel, 2026-08-14: configured and
+	// wired, yet the panel kept rendering raw IDs with nothing in the
+	// logs to say why).
+	Logger *slog.Logger
+}
+
+// warn logs one enrichment failure.
+func (e *UserinfoEnricher) warn(ctx context.Context, msg string, err error) {
+	logger := e.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	logger.WarnContext(ctx, "userinfo enrichment degraded", slog.String("stage", msg), slog.Any("error", err))
 }
 
 // Enrich returns the identity with email and role-derived groups
@@ -38,6 +58,8 @@ type UserinfoEnricher struct {
 func (e *UserinfoEnricher) Enrich(ctx context.Context, token string, identity Identity) Identity {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.URL, nil)
 	if err != nil {
+		e.warn(ctx, "build request", err)
+
 		return identity
 	}
 
@@ -50,17 +72,24 @@ func (e *UserinfoEnricher) Enrich(ctx context.Context, token string, identity Id
 
 	resp, err := client.Do(req)
 	if err != nil {
+		e.warn(ctx, "call", err)
+
 		return identity
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		e.warn(ctx, "status", fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body))))
+
 		return identity
 	}
 
 	var claims map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
+		e.warn(ctx, "decode", err)
+
 		return identity
 	}
 
