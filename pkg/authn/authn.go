@@ -106,15 +106,30 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorization string) 
 		}
 
 		if authenticated {
-			if a.Enricher != nil && looksEnrichable(identity) {
-				identity = a.Enricher.Enrich(ctx, token, identity)
-			}
-
-			return identity, nil
+			return a.enrich(ctx, token, identity), nil
 		}
 	}
 
-	return identityFromJWT(token, a.GroupsClaim)
+	identity, err := identityFromJWT(token, a.GroupsClaim)
+	if err != nil {
+		return Identity{}, err
+	}
+
+	// The fallback branch is precisely where gateway sessions land:
+	// their tokens carry no email claim, so the CLUSTER's OIDC
+	// username mapping fails and TokenReview answers unauthenticated —
+	// enrichment wired only on the reviewed branch never fired
+	// (observed on devel 0.13.1: raw-ID panel, zero WARN lines).
+	return a.enrich(ctx, token, identity), nil
+}
+
+// enrich applies userinfo enrichment when configured and warranted.
+func (a *Authenticator) enrich(ctx context.Context, token string, identity Identity) Identity {
+	if a.Enricher == nil || !looksEnrichable(identity) {
+		return identity
+	}
+
+	return a.Enricher.Enrich(ctx, token, identity)
 }
 
 // bearerToken pulls the credential out of an Authorization header.
