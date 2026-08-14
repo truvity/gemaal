@@ -83,11 +83,11 @@ func New(cfg *config.Config, log *slog.Logger, svc *service.Service, auth *authn
 	}
 
 	return &Panel{
-		cfg:      cfg,
-		log:      log,
-		svc:      svc,
-		version:  version,
-		pages:    pages,
+		cfg:     cfg,
+		log:     log,
+		svc:     svc,
+		version: version,
+		pages:   pages,
 		// The SHARED authenticator, deliberately: the panel building
 		// its own bare parser here is how the 0.13.x enrichment kept
 		// being bypassed for the header line — three releases of authn
@@ -525,7 +525,8 @@ func (p *Panel) who(r *http.Request) string {
 // literal comments from templates, so the wrapper must arrive as a
 // trusted snippet with the identity escaped here.
 func whoHTML(who string) template.HTML {
-	return template.HTML("<!--email_off-->" + template.HTMLEscapeString(who) + "<!--/email_off-->") //nolint:gosec // escaped above; comments are the CF escape hatch
+	//nolint:gosec // escaped above; the comments are the CF escape hatch
+	return template.HTML("<!--email_off-->" + template.HTMLEscapeString(who) + "<!--/email_off-->")
 }
 
 // humanDuration renders an age compactly: "3d4h", "26h", "45m".
