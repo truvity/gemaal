@@ -127,6 +127,9 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 	}
 
 	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: cfg.Authz.GroupsClaim}
+	if cfg.Authz.UserinfoURL != "" {
+		auth.Enricher = &authn.UserinfoEnricher{URL: cfg.Authz.UserinfoURL}
+	}
 	history := engine.NewHistory(historyCapacity)
 
 	svc := service.New(service.Deps{

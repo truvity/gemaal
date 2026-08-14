@@ -122,6 +122,17 @@ type Authz struct {
 	// TokenAudiences are passed to TokenReview; empty means the API
 	// server's default audience.
 	TokenAudiences []string `yaml:"tokenAudiences"`
+
+	// AdminUsers grants admin by subject or email, case-insensitively —
+	// the deterministic rail for gateway sessions, whose tokens carry
+	// no groups (issue #27). Complements AdminGroups; same empty-means-
+	// nobody default.
+	AdminUsers []string `yaml:"adminUsers"`
+
+	// UserinfoURL, when set, lets the service resolve email and role
+	// assertions server-side for bare gateway identities (the OIDC
+	// userinfo endpoint). Empty disables enrichment.
+	UserinfoURL string `yaml:"userinfoURL"`
 }
 
 // Hold bounds the Checkout/Extend keep-until stamps.
