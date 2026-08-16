@@ -18,6 +18,9 @@ gemaal **never installs anything**. Clients run `helm upgrade --install`
 themselves; the service only ever uninstalls and sweeps. A down gemaal
 delays cleanup — it never blocks anyone's loop.
 
+AI agents: start with **[AGENTS.md](AGENTS.md)** — the exhaustive gemaalctl
+command surface and the rules for documenting it.
+
 ## Three faces
 
 | Face | What it is |
