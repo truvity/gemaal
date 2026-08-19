@@ -1,9 +1,17 @@
-# Third-party actions are pinned to commit SHAs (exact version tag noted
-# inline) so this repo starts clean on the unpinned-actions CodeQL finding.
+# Tag-triggered release: binaries, the service image (ko) and the helm
+# chart, all to GHCR — the shared implementation.
 #
-# Releases: binaries (archives), the service image (ko, with helm+kubectl
-# from the alpine/k8s base — the service shells out to both), and the
-# helm chart — mirroring the github-roster release shape.
+# The hand-rolled copy this replaces was one of NINE identical ones
+# across the public estate, and the shared workflow it now calls had sat
+# in ci-workflows with zero callers. That gap is not theoretical: bar's
+# release workflows drifted out of sync with the tool they invoked and
+# nobody noticed until a tag was cut months later, because release
+# machinery is exercised only by a tag.
+#
+# The caller must grant the permissions below — a reusable workflow can
+# narrow them but never widen them, which is also why the private (ECR)
+# half is a separate workflow rather than a flag on this one: its
+# callers grant id-token, not packages.
 name: Release
 
 on:
@@ -23,34 +31,9 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
-
-      - name: Install devbox
-        run: curl -fsSL https://get.jetify.com/devbox | bash -s -- -f
-
-      - uses: ko-build/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
-
-      - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: GoReleaser
-        run: devbox run -- goreleaser release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KO_DOCKER_REPO: ghcr.io/truvity
-
-      # The git tag is the sole version authority: the chart's own version
-      # field is a placeholder that never moves, and is stamped here.
-      - name: Package and push Helm chart
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
-          devbox run -- helm package charts/gemaal --version "$VERSION" --app-version "$VERSION" --destination dist/
-          devbox run -- helm push dist/gemaal-${VERSION}.tgz oci://ghcr.io/truvity/charts
+    permissions:
+      contents: write
+      packages: write
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@abe179fb041b06ec492df25adfa46b0c5df9ab4d # v2.6.0
+    with:
+      charts: '["gemaal"]'
