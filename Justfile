@@ -41,7 +41,20 @@ clean:
     rm -rf dist/ coverage.out
 
 # Run all checks (build + test + lint + vuln)
-check: build test lint vuln
+# Render the chart with the shipped values plus a fully-featured set;
+# prove the schema rejects an unknown key (values.schema.json is the
+# contract — a typo must fail the render, not be silently ignored).
+chart-lint:
+    helm lint charts/gemaal
+    helm template gemaal charts/gemaal >/dev/null
+    helm template gemaal charts/gemaal \
+        --set confirm=true \
+        --set rbac.sweep.enabled=true \
+        --set exposure.enabled=true \
+        --set exposure.hostname=gemaal.example.com >/dev/null
+    ! helm template gemaal charts/gemaal --set bogusKey=1 >/dev/null 2>&1
+
+check: build test lint chart-lint vuln
 
 # Build a snapshot release locally (no push, no tag)
 snapshot:
