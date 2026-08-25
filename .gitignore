@@ -1,6 +1,9 @@
 # Binaries
 bin/
-dist/
+# goreleaser output; NOT the web console — frontend/dist is COMMITTED (the
+# embed needs it and `go build` must work without a Node toolchain).
+/dist/
+!frontend/dist/
 
 # IDE
 .idea/
