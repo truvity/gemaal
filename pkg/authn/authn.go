@@ -49,6 +49,11 @@ type Identity struct {
 	// Email is the human's email; empty for workloads.
 	Email string
 
+	// Name is the human's display name (the OIDC "name" claim, via the
+	// token or userinfo); empty for workloads. Display only — nothing
+	// authorizes on it.
+	Name string
+
 	// Groups carries the caller's groups: token-review groups for a
 	// workload, the OIDC groups claim for a human.
 	Groups []string
@@ -166,6 +171,7 @@ func identityFromJWT(token, groupsClaim string) (Identity, error) {
 	identity := Identity{
 		Subject: stringClaim(claims, "sub"),
 		Email:   stringClaim(claims, "email"),
+		Name:    stringClaim(claims, "name"),
 		Groups:  stringsClaim(claims, groupsClaim),
 		Method:  MethodGatewayJWT,
 	}

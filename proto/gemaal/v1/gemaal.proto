@@ -225,6 +225,8 @@ message GetMeRequest {}
 message GetMeResponse {
   string subject = 1;
   string email = 2;
+  // Display name (OIDC "name" claim, via token or userinfo); may be empty.
+  string name = 6;
   repeated string groups = 3;
   // Admin mirrors the service's own is-admin rule, so the console can show
   // or hide operator affordances without duplicating the group list.

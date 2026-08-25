@@ -27,6 +27,7 @@ func (s *Service) GetMe(
 	return connect.NewResponse(&gemaalv1.GetMeResponse{
 		Subject: caller.Subject,
 		Email:   caller.Email,
+		Name:    caller.Name,
 		Groups:  caller.Groups,
 		Admin:   s.isAdmin(caller),
 		Method:  caller.Method,

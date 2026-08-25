@@ -156,7 +156,9 @@ export interface Me { name?: string; email?: string; role?: string }
 export async function fetchMe(signal?: AbortSignal): Promise<Me & { admin: boolean }> {
   const resp = await client.getMe({}, { signal });
   return {
-    name: resp.subject,
+    // Never the raw subject: for a human that is the IdP's numeric user id.
+    // With no name the badge falls back to the email, which reads right.
+    name: resp.name || undefined,
     email: resp.email || undefined,
     role: resp.admin ? "admin" : undefined,
     admin: resp.admin,

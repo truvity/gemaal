@@ -1214,7 +1214,9 @@ type GetMeResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Subject string                 `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
 	Email   string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	Groups  []string               `protobuf:"bytes,3,rep,name=groups,proto3" json:"groups,omitempty"`
+	// Display name (OIDC "name" claim, via token or userinfo); may be empty.
+	Name   string   `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	Groups []string `protobuf:"bytes,3,rep,name=groups,proto3" json:"groups,omitempty"`
 	// Admin mirrors the service's own is-admin rule, so the console can show
 	// or hide operator affordances without duplicating the group list.
 	Admin bool `protobuf:"varint,4,opt,name=admin,proto3" json:"admin,omitempty"`
@@ -1264,6 +1266,13 @@ func (x *GetMeResponse) GetSubject() string {
 func (x *GetMeResponse) GetEmail() string {
 	if x != nil {
 		return x.Email
+	}
+	return ""
+}
+
+func (x *GetMeResponse) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -1708,10 +1717,11 @@ const file_gemaal_v1_gemaal_proto_rawDesc = "" +
 	"\x0fResolveResponse\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\x0e\n" +
-	"\fGetMeRequest\"\x85\x01\n" +
+	"\fGetMeRequest\"\x99\x01\n" +
 	"\rGetMeResponse\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x14\n" +
-	"\x05email\x18\x02 \x01(\tR\x05email\x12\x16\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12\x16\n" +
 	"\x06groups\x18\x03 \x03(\tR\x06groups\x12\x14\n" +
 	"\x05admin\x18\x04 \x01(\bR\x05admin\x12\x16\n" +
 	"\x06method\x18\x05 \x01(\tR\x06method\"\x13\n" +

@@ -99,6 +99,15 @@ func (e *UserinfoEnricher) Enrich(ctx context.Context, token string, identity Id
 		}
 	}
 
+	// Display name, same one-way fill: userinfo answers when the access
+	// token carries no profile claims (Zitadel asserts them into the ID
+	// token, which never reaches this service).
+	if identity.Name == "" {
+		if name, ok := claims["name"].(string); ok {
+			identity.Name = name
+		}
+	}
+
 	// Role KEYS become groups, verbatim ("{ns}:{role}" per the
 	// role-spine ProjectRole convention) — adminGroups may name them
 	// directly alongside the kube-token group shapes.
