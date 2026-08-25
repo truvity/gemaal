@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+
+	gatewayauth "github.com/truvity/gateway-auth"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -53,6 +55,8 @@ type Deps struct {
 	Keeper  Housekeeper
 	Auth    Authenticator
 	History *engine.History
+	// Version is the running build's identity, for the console footer.
+	Version string
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
 }
@@ -89,8 +93,9 @@ func (s *Service) Handler() (string, http.Handler) {
 	return gemaalv1connect.NewGemaalServiceHandler(s)
 }
 
-// History exposes the sweep records for the panel.
-func (s *Service) History() *engine.History { return s.deps.History }
+// SweepHistory exposes the raw sweep records (the History RPC serves the
+// console's typed view of the same data).
+func (s *Service) SweepHistory() *engine.History { return s.deps.History }
 
 // Plan computes what housekeeping would do right now. No side effects,
 // no authentication: the plan is the console's honesty, not a mutation.
@@ -424,7 +429,12 @@ func (s *Service) authenticate(ctx context.Context, header http.Header) (authn.I
 		return authn.Identity{}, connect.NewError(connect.CodeUnauthenticated, errors.New("no authenticator configured"))
 	}
 
-	caller, err := s.deps.Auth.Authenticate(ctx, header.Get("Authorization"))
+	// ForwardAuthorization normalizes the two ways a credential arrives:
+	// Authorization verbatim (CLI, service accounts), or the gateway's
+	// X-Auth-Request-Access-Token (a browser session behind oauth2-proxy),
+	// which gains the Bearer scheme. Without this the web console could
+	// never authenticate its mutations.
+	caller, err := s.deps.Auth.Authenticate(ctx, gatewayauth.ForwardAuthorization(gatewayauth.HeaderGetter(header.Get)))
 	if err != nil {
 		if errors.Is(err, authn.ErrNoCredentials) {
 			return authn.Identity{}, connect.NewError(connect.CodeUnauthenticated, err)

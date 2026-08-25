@@ -21,3 +21,4 @@ vendor/
 # Local configuration — may name real clusters, buckets and namespaces.
 config.yaml
 config.local.yaml
+frontend/node_modules/

@@ -1,6 +1,6 @@
 // Command gemaal runs the gemaal service: the pump behind a shared test
 // cluster. G3: the housekeeping loop over the label ledger, the six
-// RPCs, and the web panel — dry-run (shadow mode) by default.
+// RPCs, and the web console — dry-run (shadow mode) by default.
 package main
 
 import (
@@ -20,14 +20,13 @@ import (
 	"github.com/truvity/gemaal/pkg/authn"
 	"github.com/truvity/gemaal/pkg/config"
 	"github.com/truvity/gemaal/pkg/engine"
-	"github.com/truvity/gemaal/pkg/panel"
 	"github.com/truvity/gemaal/pkg/service"
 )
 
 // Version is injected at release time by goreleaser's ldflags.
 var Version = "dev"
 
-// historyCapacity bounds the in-memory sweep scrollback the panel shows.
+// historyCapacity bounds the in-memory sweep scrollback the console shows.
 const historyCapacity = 200
 
 func main() {
@@ -83,7 +82,7 @@ func newCommand() *cli.Command {
 
 // wire assembles the engine, the service and the panel from the config —
 // the single hand-rolled wiring function, no container.
-func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.Service, *panel.Panel, *engine.Engine, error) {
+func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.Service, *engine.Engine, error) {
 	execClient := engine.ExecClient{Kubecontext: cfg.Kubecontext}
 
 	eng := &engine.Engine{
@@ -96,7 +95,7 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 	if len(cfg.AllowList.SSMRoots) > 0 {
 		ssmClient, err := engine.NewAWSSSMClient(ctx, cfg.AWSRegion)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("ssm client: %w", err)
+			return nil, nil, fmt.Errorf("ssm client: %w", err)
 		}
 
 		eng.SSM = ssmClient
@@ -105,7 +104,7 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 	if len(cfg.AllowList.S3Buckets) > 0 {
 		s3Client, err := engine.NewAWSS3Client(ctx, cfg.AWSRegion)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("s3 client: %w", err)
+			return nil, nil, fmt.Errorf("s3 client: %w", err)
 		}
 
 		eng.S3 = s3Client
@@ -123,7 +122,7 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 	case errors.Is(err, authn.ErrNotInCluster):
 		log.Warn("not in a cluster: TokenReview disabled, workload tokens will not authenticate")
 	default:
-		return nil, nil, nil, fmt.Errorf("token reviewer: %w", err)
+		return nil, nil, fmt.Errorf("token reviewer: %w", err)
 	}
 
 	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: cfg.Authz.GroupsClaim}
@@ -138,14 +137,10 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 		Keeper:  eng,
 		Auth:    auth,
 		History: history,
+		Version: Version,
 	})
 
-	ui, err := panel.New(cfg, log, svc, auth, Version)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("panel: %w", err)
-	}
-
-	return svc, ui, eng, nil
+	return svc, eng, nil
 }
 
 // tick is one housekeeping pass: plan, then apply (which records
@@ -185,7 +180,7 @@ func serve(ctx context.Context, configPath string) error {
 		return err
 	}
 
-	svc, ui, eng, err := wire(ctx, cfg, log)
+	svc, eng, err := wire(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -193,7 +188,7 @@ func serve(ctx context.Context, configPath string) error {
 	mux := http.NewServeMux()
 	path, handler := svc.Handler()
 	mux.Handle(path, handler)
-	ui.Register(mux)
+	registerConsole(mux)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -209,7 +204,7 @@ func serve(ctx context.Context, configPath string) error {
 	_, err = scheduler.NewJob(
 		gocron.DurationJob(cfg.HousekeepingInterval.Std()),
 		gocron.NewTask(func() {
-			tick(ctx, cfg, eng, svc.History(), log)
+			tick(ctx, cfg, eng, svc.SweepHistory(), log)
 		}),
 		// One tick at a time: a slow uninstall must not stack ticks.
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),

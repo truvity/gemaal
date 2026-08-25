@@ -13,3 +13,10 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
+  # TypeScript for the web console (Connect-Web). protobuf-es v2 emits the
+  # message schemas AND the service descriptor, which @connectrpc/connect v2
+  # consumes via createClient — the same toolchain as the github-roster
+  # reference console.
+  - remote: buf.build/bufbuild/es
+    out: frontend/src/gen
+    opt: target=ts

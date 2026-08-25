@@ -40,6 +40,18 @@ service GemaalService {
   // personnel-sourced configuration assigns it.
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
 
+  // GetMe returns the authenticated caller (subject, email, groups) so the
+  // web console's header can show who is signed in and what they may do.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+
+  // GetVersion returns the running build's identity, for the console footer.
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+
+  // History returns the sweep audit records, newest first — one per loop
+  // tick or Sweep RPC (quiet ticks collapsed) — for the console's Sweeps
+  // view.
+  rpc History(HistoryRequest) returns (HistoryResponse);
+
   // Decommission uninstalls ONE tenant's release ring now — the
   // explicit end-of-life call. The tenant's own keep-until does not
   // hold it (the caller is stating "done"), but everything else that
@@ -206,4 +218,52 @@ message ResolveResponse {
   string slug = 1;
   // The namespace their standing installations live in.
   string namespace = 2;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  string subject = 1;
+  string email = 2;
+  repeated string groups = 3;
+  // Admin mirrors the service's own is-admin rule, so the console can show
+  // or hide operator affordances without duplicating the group list.
+  bool admin = 4;
+  // Method records which authority answered (token-review or OIDC).
+  string method = 5;
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+}
+
+message HistoryRequest {}
+
+// SweepHistoryDetail is one planned action's outcome inside a record.
+message SweepHistoryDetail {
+  string kind = 1;
+  string target = 2;
+  string rule = 3;
+  string reason = 4;
+  bool executed = 5;
+  string error = 6;
+}
+
+// SweepHistoryRecord is one sweep execution (or a collapsed run of quiet
+// loop ticks).
+message SweepHistoryRecord {
+  google.protobuf.Timestamp at = 1;
+  bool dry_run = 2;
+  // Source says which face ran the sweep: "loop" or "rpc".
+  string source = 3;
+  int32 kept = 4;
+  int32 problems = 5;
+  int32 quiet_ticks = 6;
+  repeated SweepHistoryDetail details = 7;
+}
+
+message HistoryResponse {
+  repeated SweepHistoryRecord records = 1;
 }

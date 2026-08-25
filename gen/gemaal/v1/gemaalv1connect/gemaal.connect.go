@@ -53,6 +53,13 @@ const (
 	GemaalServiceSweepProcedure = "/gemaal.v1.GemaalService/Sweep"
 	// GemaalServiceResolveProcedure is the fully-qualified name of the GemaalService's Resolve RPC.
 	GemaalServiceResolveProcedure = "/gemaal.v1.GemaalService/Resolve"
+	// GemaalServiceGetMeProcedure is the fully-qualified name of the GemaalService's GetMe RPC.
+	GemaalServiceGetMeProcedure = "/gemaal.v1.GemaalService/GetMe"
+	// GemaalServiceGetVersionProcedure is the fully-qualified name of the GemaalService's GetVersion
+	// RPC.
+	GemaalServiceGetVersionProcedure = "/gemaal.v1.GemaalService/GetVersion"
+	// GemaalServiceHistoryProcedure is the fully-qualified name of the GemaalService's History RPC.
+	GemaalServiceHistoryProcedure = "/gemaal.v1.GemaalService/History"
 	// GemaalServiceDecommissionProcedure is the fully-qualified name of the GemaalService's
 	// Decommission RPC.
 	GemaalServiceDecommissionProcedure = "/gemaal.v1.GemaalService/Decommission"
@@ -80,6 +87,15 @@ type GemaalServiceClient interface {
 	// identity evidence driver — to the slug and namespace the service's
 	// personnel-sourced configuration assigns it.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// GetMe returns the authenticated caller (subject, email, groups) so the
+	// web console's header can show who is signed in and what they may do.
+	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error)
+	// GetVersion returns the running build's identity, for the console footer.
+	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// History returns the sweep audit records, newest first — one per loop
+	// tick or Sweep RPC (quiet ticks collapsed) — for the console's Sweeps
+	// view.
+	History(context.Context, *connect.Request[v1.HistoryRequest]) (*connect.Response[v1.HistoryResponse], error)
 	// Decommission uninstalls ONE tenant's release ring now — the
 	// explicit end-of-life call. The tenant's own keep-until does not
 	// hold it (the caller is stating "done"), but everything else that
@@ -139,6 +155,24 @@ func NewGemaalServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(gemaalServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		getMe: connect.NewClient[v1.GetMeRequest, v1.GetMeResponse](
+			httpClient,
+			baseURL+GemaalServiceGetMeProcedure,
+			connect.WithSchema(gemaalServiceMethods.ByName("GetMe")),
+			connect.WithClientOptions(opts...),
+		),
+		getVersion: connect.NewClient[v1.GetVersionRequest, v1.GetVersionResponse](
+			httpClient,
+			baseURL+GemaalServiceGetVersionProcedure,
+			connect.WithSchema(gemaalServiceMethods.ByName("GetVersion")),
+			connect.WithClientOptions(opts...),
+		),
+		history: connect.NewClient[v1.HistoryRequest, v1.HistoryResponse](
+			httpClient,
+			baseURL+GemaalServiceHistoryProcedure,
+			connect.WithSchema(gemaalServiceMethods.ByName("History")),
+			connect.WithClientOptions(opts...),
+		),
 		decommission: connect.NewClient[v1.DecommissionRequest, v1.DecommissionResponse](
 			httpClient,
 			baseURL+GemaalServiceDecommissionProcedure,
@@ -156,6 +190,9 @@ type gemaalServiceClient struct {
 	extend       *connect.Client[v1.ExtendRequest, v1.ExtendResponse]
 	sweep        *connect.Client[v1.SweepRequest, v1.SweepResponse]
 	resolve      *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	getMe        *connect.Client[v1.GetMeRequest, v1.GetMeResponse]
+	getVersion   *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
+	history      *connect.Client[v1.HistoryRequest, v1.HistoryResponse]
 	decommission *connect.Client[v1.DecommissionRequest, v1.DecommissionResponse]
 }
 
@@ -189,6 +226,21 @@ func (c *gemaalServiceClient) Resolve(ctx context.Context, req *connect.Request[
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// GetMe calls gemaal.v1.GemaalService.GetMe.
+func (c *gemaalServiceClient) GetMe(ctx context.Context, req *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error) {
+	return c.getMe.CallUnary(ctx, req)
+}
+
+// GetVersion calls gemaal.v1.GemaalService.GetVersion.
+func (c *gemaalServiceClient) GetVersion(ctx context.Context, req *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
+	return c.getVersion.CallUnary(ctx, req)
+}
+
+// History calls gemaal.v1.GemaalService.History.
+func (c *gemaalServiceClient) History(ctx context.Context, req *connect.Request[v1.HistoryRequest]) (*connect.Response[v1.HistoryResponse], error) {
+	return c.history.CallUnary(ctx, req)
+}
+
 // Decommission calls gemaal.v1.GemaalService.Decommission.
 func (c *gemaalServiceClient) Decommission(ctx context.Context, req *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error) {
 	return c.decommission.CallUnary(ctx, req)
@@ -216,6 +268,15 @@ type GemaalServiceHandler interface {
 	// identity evidence driver — to the slug and namespace the service's
 	// personnel-sourced configuration assigns it.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// GetMe returns the authenticated caller (subject, email, groups) so the
+	// web console's header can show who is signed in and what they may do.
+	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error)
+	// GetVersion returns the running build's identity, for the console footer.
+	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// History returns the sweep audit records, newest first — one per loop
+	// tick or Sweep RPC (quiet ticks collapsed) — for the console's Sweeps
+	// view.
+	History(context.Context, *connect.Request[v1.HistoryRequest]) (*connect.Response[v1.HistoryResponse], error)
 	// Decommission uninstalls ONE tenant's release ring now — the
 	// explicit end-of-life call. The tenant's own keep-until does not
 	// hold it (the caller is stating "done"), but everything else that
@@ -271,6 +332,24 @@ func NewGemaalServiceHandler(svc GemaalServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(gemaalServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gemaalServiceGetMeHandler := connect.NewUnaryHandler(
+		GemaalServiceGetMeProcedure,
+		svc.GetMe,
+		connect.WithSchema(gemaalServiceMethods.ByName("GetMe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gemaalServiceGetVersionHandler := connect.NewUnaryHandler(
+		GemaalServiceGetVersionProcedure,
+		svc.GetVersion,
+		connect.WithSchema(gemaalServiceMethods.ByName("GetVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gemaalServiceHistoryHandler := connect.NewUnaryHandler(
+		GemaalServiceHistoryProcedure,
+		svc.History,
+		connect.WithSchema(gemaalServiceMethods.ByName("History")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gemaalServiceDecommissionHandler := connect.NewUnaryHandler(
 		GemaalServiceDecommissionProcedure,
 		svc.Decommission,
@@ -291,6 +370,12 @@ func NewGemaalServiceHandler(svc GemaalServiceHandler, opts ...connect.HandlerOp
 			gemaalServiceSweepHandler.ServeHTTP(w, r)
 		case GemaalServiceResolveProcedure:
 			gemaalServiceResolveHandler.ServeHTTP(w, r)
+		case GemaalServiceGetMeProcedure:
+			gemaalServiceGetMeHandler.ServeHTTP(w, r)
+		case GemaalServiceGetVersionProcedure:
+			gemaalServiceGetVersionHandler.ServeHTTP(w, r)
+		case GemaalServiceHistoryProcedure:
+			gemaalServiceHistoryHandler.ServeHTTP(w, r)
 		case GemaalServiceDecommissionProcedure:
 			gemaalServiceDecommissionHandler.ServeHTTP(w, r)
 		default:
@@ -324,6 +409,18 @@ func (UnimplementedGemaalServiceHandler) Sweep(context.Context, *connect.Request
 
 func (UnimplementedGemaalServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.Resolve is not implemented"))
+}
+
+func (UnimplementedGemaalServiceHandler) GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.GetMeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.GetMe is not implemented"))
+}
+
+func (UnimplementedGemaalServiceHandler) GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.GetVersion is not implemented"))
+}
+
+func (UnimplementedGemaalServiceHandler) History(context.Context, *connect.Request[v1.HistoryRequest]) (*connect.Response[v1.HistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gemaal.v1.GemaalService.History is not implemented"))
 }
 
 func (UnimplementedGemaalServiceHandler) Decommission(context.Context, *connect.Request[v1.DecommissionRequest]) (*connect.Response[v1.DecommissionResponse], error) {

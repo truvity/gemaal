@@ -69,12 +69,16 @@ garbage contract of [docs/design.md](docs/design.md):
   resolved email must render to the target namespace), Sweep is
   admin-only. `Resolve` answers from the deployer-rendered email→slug
   map.
-- **panel** — server-rendered console at `/` (tenants: ages, tiers,
-  ledger, pending actions, Checkout/Extend forms) and `/sweeps`
-  (history). No scripts at all, CSP-hardened, stateless same-origin
-  guard on the posts; browser login belongs to the gateway
-  (Envoy SecurityPolicy OIDC), the panel consumes the forwarded
-  identity.
+- **console** — the web console at `/` (Vite/React/MUI single-page app
+  over Connect-Web — the fleet console stack, see
+  [gateway-auth/docs/console-stack.md](https://github.com/truvity/gateway-auth/blob/master/docs/console-stack.md)):
+  Tenants (ages, tiers, ledger, pending actions, Checkout/Extend/
+  Decommission) and Sweeps (history, expandable per-action outcomes).
+  CSP-hardened, embedded in the binary; browser login belongs to the
+  gateway, the header renders the shared
+  `@truvity/gateway-auth/react` UserBadge, and every action goes
+  through the same authenticated RPCs gemaalctl uses — no second
+  authorization path.
 
 The helm chart lives in [charts/gemaal](charts/gemaal): namespace-agnostic,
 service account for pod identity, config from values (tier TTLs,

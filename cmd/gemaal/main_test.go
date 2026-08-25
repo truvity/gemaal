@@ -34,7 +34,7 @@ func TestMissingConfigRefused(t *testing.T) {
 
 // TestWireFromExample proves the wiring function and the example
 // document stay coherent: everything a deployment assembles — engine,
-// authenticator, service, panel — assembles from the committed example.
+// authenticator, service, engine — assembles from the committed example.
 func TestWireFromExample(t *testing.T) {
 	// Outside a cluster the reviewer is skipped with a warning; that
 	// path must not depend on this machine's environment.
@@ -44,11 +44,10 @@ func TestWireFromExample(t *testing.T) {
 	cfg, err := config.Load(filepath.Join("..", "..", "config.example.yaml"))
 	require.NoError(t, err)
 
-	svc, ui, eng, err := wire(context.Background(), cfg, slog.New(slog.DiscardHandler))
+	svc, eng, err := wire(context.Background(), cfg, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	assert.NotNil(t, svc)
-	assert.NotNil(t, ui)
 	require.NotNil(t, eng)
 	assert.NotNil(t, eng.SSM, "the example configures a /test/ root, so the SSM client wires up")
 	assert.Nil(t, eng.S3, "the S3 target stays stubbed off pending the shared test bucket")
