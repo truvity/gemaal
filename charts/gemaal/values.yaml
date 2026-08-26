@@ -7,7 +7,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/truvity/gemaal
+  repository: ghcr.io/truvity/gemaal/server
   tag: ""  # defaults to appVersion
   pullPolicy: IfNotPresent
 

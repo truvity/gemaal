@@ -62,4 +62,4 @@ snapshot:
 
 # Run the service locally against the example configuration
 run:
-    go run ./cmd/gemaal --config config.example.yaml
+    go run ./cmd/server --config config.example.yaml

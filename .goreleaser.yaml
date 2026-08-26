@@ -4,7 +4,7 @@ version: 2
 
 builds:
   - id: gemaal
-    main: ./cmd/gemaal
+    main: ./cmd/server
     binary: gemaal
     env:
       - CGO_ENABLED=0
@@ -65,7 +65,7 @@ kos:
     base_image: alpine/k8s:1.33.4
     sbom: none
     labels:
-      org.opencontainers.image.title: gemaal
+      org.opencontainers.image.title: server
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.source: https://github.com/truvity/gemaal
 
