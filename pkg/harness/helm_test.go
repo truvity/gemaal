@@ -35,7 +35,7 @@ func TestInstallArgv(t *testing.T) {
 		"--namespace", "emp-jdoe",
 		"--kube-context", "devel@oidc",
 		"--kubeconfig", "/tmp/kc",
-		"--wait", "--timeout", "5m0s",
+		"--wait", "--timeout", "10m0s",
 		"--labels", "gemaal.io/ttl=24h,gemaal.io/keep-until=20260805T120000Z,gemaal.io/execution-id=r12-a1",
 		"--values", "a.yaml",
 		"--values", "b.yaml",

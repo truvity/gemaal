@@ -23,9 +23,16 @@ const DefaultLabelDomain = "gemaal.io"
 const KeepUntilLayout = "20060102T150405Z"
 
 // DefaultHelmTimeout bounds each helm --wait: enough for a
-// finalizer-heavy ring chart, short enough that a wedged install
-// surfaces as an error instead of a hung test job.
-const DefaultHelmTimeout = 5 * time.Minute
+// finalizer-heavy ring chart ON A COLD CLUSTER, short enough that a
+// wedged install still surfaces as an error instead of a hung test job.
+//
+// 10m, not 5m: measured on devel (2026-08-26, off-hours), a ring-pair
+// deploy after karpenter consolidation pays node scale-up + image pulls
+// + EBS PVC provisioning — the CNPG volume alone took >5m — and four
+// consecutive CI runs died in `helm --wait` before the database existed
+// while every component crash-looped awaiting it. Warm-cluster deploys
+// finish in ~2m; the budget must cover the cold path.
+const DefaultHelmTimeout = 10 * time.Minute
 
 // labelValue is the Kubernetes label-value shape the execution id must
 // have to ride the release Secret.
