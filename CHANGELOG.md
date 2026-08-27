@@ -3,6 +3,15 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.17.x
+- **0.17.0** — the harness sweeps abandoned claim leases: clean exits
+  always deleted their own lease, but SIGKILL'd runs left theirs behind
+  forever (a CI namespace accumulated 45 in three weeks — the objects
+  are permanent by design, since expiry-by-silence needs no janitor for
+  correctness). Every suite start now deletes gemaal-labeled leases
+  unrenewed for an hour (40× LeaseDuration — far past any takeover's
+  compare-and-swap window), best-effort, never blocking the suite.
+
 ## 0.12.x
 - **0.12.0** — `GEMAAL_AWS_AMBIENT` (#23): the pipeline drops every AWS
   profile the config names (no `AWS_PROFILE`, no `--profile`) so
