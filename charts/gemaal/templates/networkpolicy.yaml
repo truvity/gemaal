@@ -23,9 +23,16 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    # 443 carries GitHub + AWS APIs — including STS, which is the
+    # ENTIRE credential path under IRSA (the web-identity token is a
+    # projected file; no extra egress needed). Both auth modes are
+    # first-class here, not accidents of each other's allowances.
     - ports:
         - port: 443
           protocol: TCP
+    # EKS Pod Identity's credential endpoint: the node-local agent at a
+    # link-local address, plain HTTP. Harmless under IRSA (nothing
+    # dials it); required under PIA.
     - to:
         - ipBlock:
             cidr: 169.254.170.23/32
