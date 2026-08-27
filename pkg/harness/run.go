@@ -206,6 +206,12 @@ func (s Suite) run(ctx context.Context, m TestMain) (int, error) {
 		defer claim.Release(context.WithoutCancel(ctx))
 	}
 
+	// Janitor duty while we hold a lane ourselves: clean exits delete
+	// their own lease, but SIGKILL'd runs leave theirs behind forever,
+	// and shared CI namespaces accumulate them without bound. Hour-cold
+	// leases only — see sweepClaimAfter — and strictly best-effort.
+	cluster.SweepAbandonedClaims(ctx, tenant.Namespace)
+
 	defer s.teardown(cluster, tenant, skip)
 
 	if err := s.installPhases(ctx, cluster, tenant, skip); err != nil {

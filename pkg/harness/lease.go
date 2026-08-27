@@ -26,6 +26,18 @@ const (
 
 	// leaseTimeLayout is metav1.MicroTime's wire format.
 	leaseTimeLayout = "2006-01-02T15:04:05.000000Z07:00"
+
+	// sweepClaimAfter is how long past its last renewal an abandoned
+	// claim's OBJECT is deleted. Expiry alone frees the LANE (absence
+	// of renewal is the release — no janitor needed for correctness),
+	// but the objects themselves are permanent otherwise: Release
+	// deletes ours on a clean exit, and a SIGKILL'd run leaves its
+	// lease behind forever — a CI namespace accumulated 45 in three
+	// weeks. The margin is wide because deleting a lease that a
+	// concurrent claimant is about to `kubectl replace` turns their
+	// compare-and-swap into a spurious NotFound; an hour of silence
+	// puts any takeover interest far in the past.
+	sweepClaimAfter = 40 * LeaseDuration
 )
 
 // ErrTenantHeld reports a live claim by someone else. It is a correctness
@@ -279,6 +291,64 @@ func (c *Cluster) writeLease(ctx context.Context, tenant Tenant, holder, resourc
 	}
 
 	return c.runner().Run(ctx, c.kubectlArgs(verb, "-f", path)...)
+}
+
+// SweepAbandonedClaims deletes the harness's own Lease objects that
+// have gone unrenewed for sweepClaimAfter — the graveyard of SIGKILL'd
+// runs. Selection is by the managed-by label every claim carries, never
+// by name, so nothing that is not gemaal's is ever touched. Best-effort
+// by design: a failure to sweep is a failure to tidy, and must not
+// block or fail the suite that happened to be on janitor duty.
+func (c *Cluster) SweepAbandonedClaims(ctx context.Context, namespace string) {
+	out, err := c.runner().Output(ctx, c.kubectlArgs(
+		"get", "leases",
+		"--namespace", namespace,
+		"-l", "app.kubernetes.io/managed-by=gemaal-harness",
+		"-o", "json",
+	)...)
+	if err != nil {
+		return
+	}
+
+	var list struct {
+		Items []leaseObject `json:"items"`
+	}
+
+	if err := json.Unmarshal([]byte(out), &list); err != nil {
+		return
+	}
+
+	var abandoned []string
+
+	for i := range list.Items {
+		lease := &list.Items[i]
+
+		renewed := lease.Spec.RenewTime
+		if renewed == "" {
+			renewed = lease.Spec.AcquireTime
+		}
+
+		// An unparseable timestamp is skipped, not swept: when in doubt
+		// about a lock's liveness, the janitor stands down.
+		ts, err := time.Parse(leaseTimeLayout, renewed)
+		if err != nil || time.Since(ts) <= sweepClaimAfter {
+			continue
+		}
+
+		abandoned = append(abandoned, lease.Metadata.Name)
+	}
+
+	if len(abandoned) == 0 {
+		return
+	}
+
+	argv := c.kubectlArgs("delete", "lease")
+	argv = append(argv, abandoned...)
+	argv = append(argv, "--namespace", namespace, "--ignore-not-found")
+
+	if err := c.runner().Run(ctx, argv...); err == nil {
+		fmt.Fprintf(os.Stderr, "harness: swept %d abandoned claim lease(s)\n", len(abandoned))
+	}
 }
 
 // DefaultHolder identifies this process for claim purposes: enough to

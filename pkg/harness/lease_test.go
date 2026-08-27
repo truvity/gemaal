@@ -217,3 +217,114 @@ func TestClaimWithAllocation_NeverSecondGuessesAChoice(t *testing.T) {
 	assert.Equal(t, "other@host#7", held.Holder)
 	assert.Equal(t, "chosen", got.Release, "no lane walk on a chosen name")
 }
+
+// sweepLease is one fixture entry for the sweep tests.
+type sweepLease struct {
+	name    string
+	renew   string // RenewTime literal; empty exercises the acquire fallback
+	acquire string
+}
+
+// sweepListJSON builds a LeaseList of gemaal-labeled claims.
+func sweepListJSON(t *testing.T, entries []sweepLease) string {
+	t.Helper()
+
+	var items []leaseObject
+
+	for _, e := range entries {
+		var l leaseObject
+		l.Metadata.Name = e.name
+		l.Metadata.Namespace = "ci-truvity-bar"
+		l.Spec.HolderIdentity = "someone@somewhere#1"
+		l.Spec.LeaseDurationSeconds = int(LeaseDuration / time.Second)
+		l.Spec.RenewTime = e.renew
+		l.Spec.AcquireTime = e.acquire
+		items = append(items, l)
+	}
+
+	data, err := json.Marshal(map[string]any{"items": items})
+	require.NoError(t, err)
+
+	return string(data)
+}
+
+// TestSweepAbandonedClaims_HourColdOnly: the sweep deletes only leases
+// silent for sweepClaimAfter. Freshly-renewed claims are HELD; an
+// expired-but-recent lease has freed its lane yet keeps its object (the
+// margin exists so a delete never races a takeover's compare-and-swap);
+// an unparseable timestamp stands down rather than guessing; a lease
+// with only an acquire time falls back to it.
+func TestSweepAbandonedClaims_HourColdOnly(t *testing.T) {
+	s := &stubRunner{}
+	cluster := &Cluster{Runner: s}
+
+	old := time.Now().UTC().Add(-2 * time.Hour).Format(leaseTimeLayout)
+	recent := time.Now().UTC().Add(-10 * time.Minute).Format(leaseTimeLayout)
+	fresh := time.Now().UTC().Add(-5 * time.Second).Format(leaseTimeLayout)
+
+	list := sweepListJSON(t, []sweepLease{
+		{name: "gemaal-claim-dead-run", renew: old},
+		{name: "gemaal-claim-live-run", renew: fresh},
+		{name: "gemaal-claim-expired-new", renew: recent},
+		{name: "gemaal-claim-garbled", renew: "not-a-timestamp"},
+		{name: "gemaal-claim-never-renewed", acquire: old},
+	})
+
+	s.on("kubectl get leases", list, nil)
+
+	cluster.SweepAbandonedClaims(context.Background(), "ci-truvity-bar")
+
+	var deletes []string
+
+	for _, call := range s.joined() {
+		if strings.Contains(call, "kubectl delete lease") {
+			deletes = append(deletes, call)
+		}
+	}
+
+	require.Len(t, deletes, 1, "one batched delete for all abandoned leases")
+	assert.Contains(t, deletes[0], "gemaal-claim-dead-run")
+	assert.NotContains(t, deletes[0], "gemaal-claim-live-run", "a renewing claim is held")
+	assert.NotContains(t, deletes[0], "gemaal-claim-expired-new",
+		"lane-free but object-young: the margin protects takeover CAS")
+	assert.NotContains(t, deletes[0], "gemaal-claim-garbled", "when in doubt, stand down")
+	assert.Contains(t, deletes[0], "gemaal-claim-never-renewed",
+		"a lease that never renewed falls back to its acquire time")
+	assert.Contains(t, deletes[0], "--namespace ci-truvity-bar")
+	assert.Contains(t, deletes[0], "--ignore-not-found")
+
+	var listed string
+
+	for _, call := range s.joined() {
+		if strings.Contains(call, "kubectl get leases") {
+			listed = call
+		}
+	}
+
+	assert.Contains(t, listed, "app.kubernetes.io/managed-by=gemaal-harness",
+		"selection is by gemaal's own label, never by name")
+}
+
+// TestSweepAbandonedClaims_BestEffort: an unlistable lease API or an
+// empty namespace deletes nothing and, above all, does not fail.
+func TestSweepAbandonedClaims_BestEffort(t *testing.T) {
+	s := &stubRunner{}
+	cluster := &Cluster{Runner: s}
+	s.on("kubectl get leases", "", errors.New("api unavailable"))
+
+	cluster.SweepAbandonedClaims(context.Background(), "ci-truvity-bar")
+
+	for _, call := range s.joined() {
+		assert.NotContains(t, call, "delete", "no deletes when the list is unavailable")
+	}
+
+	s2 := &stubRunner{}
+	cluster2 := &Cluster{Runner: s2}
+	s2.on("kubectl get leases", `{"items": []}`, nil)
+
+	cluster2.SweepAbandonedClaims(context.Background(), "ci-truvity-bar")
+
+	for _, call := range s2.joined() {
+		assert.NotContains(t, call, "delete", "an empty namespace needs no janitor")
+	}
+}
