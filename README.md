@@ -182,6 +182,29 @@ namespace-name convention (`emp-` → employee, `ci-` → ci) for charts
 that want it as a value. `gemaal.example.yaml` documents the committed
 per-repo configuration.
 
+## AWS access
+
+The service uses the AWS SDK default credential chain — the chart takes
+no side in how credentials arrive. Two equivalent setups:
+
+- **EKS Pod Identity** (the Truvity estate default): create a
+  pod-identity association binding the role to the ServiceAccount's
+  exact `(namespace, name)` pair, and pin `serviceAccount.name` so the
+  pair holds. The agent injects only the credential endpoint — never
+  `AWS_REGION` — which is why the chart carries `config.awsRegion` as a
+  first-class value (fallback: `config` → `AWS_REGION` env →
+  `eu-central-1`).
+- **IRSA**: set `serviceAccount.annotations` to
+  `eks.amazonaws.com/role-arn: <role-arn>` and trust the cluster's OIDC
+  provider account-side. On non-EKS clusters, the
+  [truvity/amazon-eks-pod-identity-webhook](https://github.com/truvity/amazon-eks-pod-identity-webhook)
+  fork provides the same projection.
+
+The chart's NetworkPolicy admits both paths explicitly: STS rides the
+general 443 egress (the whole IRSA credential path), and the
+link-local pod-identity agent (`169.254.170.23:80`) is allowed for PIA
+and simply idle under IRSA.
+
 ## Design
 
 The tenancy model — tenant identity, tier labels, the

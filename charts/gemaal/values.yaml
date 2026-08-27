@@ -13,8 +13,15 @@ image:
 
 serviceAccount:
   create: true
-  # The pod-identity association binds this exact (namespace, name)
-  # pair; the deployer pins it ("gemaal" on the reference deployment).
+  # The chart is auth-agnostic — the service uses the SDK default
+  # credential chain. Two equivalent ways to grant AWS access:
+  #   - EKS Pod Identity: associate the (namespace, name) pair with the
+  #     role account-side; pin `name` so the association holds
+  #     ("gemaal" on the reference deployment).
+  #   - IRSA: annotate the SA (eks.amazonaws.com/role-arn: <role>) via
+  #     `annotations`; on non-EKS clusters the truvity
+  #     amazon-eks-pod-identity-webhook fork provides the same
+  #     projection.
   name: ""
   annotations: {}
 
@@ -71,6 +78,12 @@ confirm: false
 # The service configuration document (config.example.yaml documents the
 # schema). Rendered verbatim into the ConfigMap under the dryRun line.
 config:
+  # AWS SDK region. First-class because the deployment cannot lean on
+  # the environment: EKS Pod Identity injects only the credential
+  # endpoint, never AWS_REGION (IRSA's webhook does inject it, and then
+  # this value simply agrees or overrides). The service falls back
+  # config → AWS_REGION → eu-central-1.
+  awsRegion: eu-central-1
   labelDomain: gemaal.io
   housekeepingInterval: 1m
   grace: 48h
