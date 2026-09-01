@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,25 +39,8 @@ func TestPushPreviewHappyPath(t *testing.T) {
 
 	// Both rings pushed, in order, from the STAGED snapshot — never from
 	// the shared output dir a concurrent build could rewrite.
-	var pushes []Command
-
-	for _, c := range s.calls {
-		if strings.HasPrefix(strings.Join(c.Argv, " "), "go tool helmctl push") {
-			pushes = append(pushes, c)
-		}
-	}
-
+	pushes := pushesOf(s)
 	require.Len(t, pushes, 2)
-
-	argOf := func(c Command, flag string) string {
-		for i, a := range c.Argv {
-			if a == flag && i+1 < len(c.Argv) {
-				return c.Argv[i+1]
-			}
-		}
-
-		return ""
-	}
 
 	assert.Equal(t, "url-shortener/charts/url-shortener-infra", argOf(pushes[0], "--repository"))
 	assert.Equal(t, "url-shortener/charts/url-shortener", argOf(pushes[1], "--repository"))
@@ -163,4 +145,52 @@ func TestPushPreviewErrorsNameSharedDir(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, stderr.String(), "dist/url-shortener/charts")
 	assert.NotContains(t, stderr.String(), "gemaal-charts-stage-")
+}
+
+// TestPushPreviewPushesExtraCharts proves an extra chart is published
+// from the same staged snapshot as the rings, at the same version, and
+// BEFORE ring3 — the commit point stays last.
+func TestPushPreviewPushesExtraCharts(t *testing.T) {
+	p, s, root, _ := newExtraTestPipeline(t)
+
+	seedCharts(t, root, p.cfg, "1.2.3", StampPreview)
+	s.on("aws ecr get-login-password --profile preview@power --region eu-central-1", stubResult{out: "sekret\n"})
+
+	require.NoError(t, p.PushPreview(context.Background()))
+
+	pushes := pushesOf(s)
+	require.Len(t, pushes, 3)
+
+	var repositories []string
+
+	for _, push := range pushes {
+		repositories = append(repositories, argOf(push, "--repository"))
+		assert.Equal(t, "1.2.3", argOf(push, "--version"))
+	}
+
+	assert.Equal(t, []string{
+		"url-shortener/charts/url-shortener-infra",
+		"url-shortener/charts/url-shortener-broker",
+		"url-shortener/charts/url-shortener",
+	}, repositories)
+
+	// The extra is published from the private stage, like every other
+	// chart — never from the shared dir a concurrent build could rewrite.
+	assert.NotContains(t, argOf(pushes[1], "--tgz"), filepath.FromSlash(p.cfg.ChartsOut()))
+}
+
+// TestPushPreviewWithoutExtraChartsIsUnchanged is the compatibility pin
+// for the push side: no extras configured, exactly the two ring pushes.
+func TestPushPreviewWithoutExtraChartsIsUnchanged(t *testing.T) {
+	p, s, root, _ := newTestPipeline(t)
+
+	seedCharts(t, root, p.cfg, "1.2.3", StampPreview)
+	s.on("aws ecr get-login-password", stubResult{out: "sekret\n"})
+
+	require.NoError(t, p.PushPreview(context.Background()))
+
+	pushes := pushesOf(s)
+	require.Len(t, pushes, 2)
+	assert.Equal(t, "url-shortener-infra", argOf(pushes[0], "--name"))
+	assert.Equal(t, "url-shortener", argOf(pushes[1], "--name"))
 }

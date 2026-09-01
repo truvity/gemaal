@@ -4,16 +4,16 @@
 # This instance is bar's url-shortener: the values mirror the release
 # scripts the pipeline commands were ported from
 # (bar/url-shortener/scripts/release-env.sh and friends). Nothing in the
-# flows is hardcoded to it — point the fields at any project with the
-# same two-ring chart shape.
+# flows is hardcoded to it — point the fields at any project that builds
+# a ring pair, plus any number of charts that carry no ring semantics.
 #
 # There are exactly two destinations, and each has exactly one
 # entrypoint: `pipeline snapshot` + `pipeline push-preview` build and
 # push preview, `pipeline release-stable` builds and pushes stable in
 # one gated run. Nothing selects a destination at run time — the
-# registry is baked into the ring3 chart at package time, and each build
-# stamps `.release-type` provenance so a push can refuse charts packaged
-# for the other registry.
+# registry is baked into every manifest-packaged chart at package time,
+# and each build stamps `.release-type` provenance so a push can refuse
+# charts packaged for the other registry.
 
 project: url-shortener
 
@@ -57,6 +57,23 @@ charts:
   ring3:
     name: url-shortener
     path: url-shortener/charts/url-shortener
+  # extra: charts this tag also publishes that carry NO ring semantics —
+  # nothing installs them in a fixed order relative to the pair and
+  # nothing drains them before it. A standalone service with no database
+  # and no ring2 dependency is one; url-shortener has none, so the list
+  # is omitted here.
+  #
+  # They are packaged EXACTLY like ring3 — from the release manifest,
+  # with --require-image-digests — because the manifest is what supplies
+  # both the digest-pinned values and the version. They are pushed
+  # BETWEEN ring2 and ring3, so the commit point still lands last.
+  # Names must be unique across ring2, ring3 and this list: every chart
+  # is packaged as <name>-<version>.tgz into one directory, and a shared
+  # name silently overwrites a tarball.
+  #
+  # extra:
+  #   - name: url-shortener-broker
+  #     path: url-shortener/charts/url-shortener-broker
 
 commands:
   goreleaser: [goreleaser]

@@ -31,11 +31,11 @@ func stubGatesPass(s *stubRunner) {
 
 // stubStableBuild scripts the full happy build+push on top of passing
 // gates.
-func stubStableBuild(t *testing.T, s *stubRunner, root string) {
+func stubStableBuild(t *testing.T, s *stubRunner, root string, cfg *Config) {
 	t.Helper()
 
 	stubGatesPass(s)
-	stubBuildEffects(t, s, root, "goreleaser release --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
+	stubBuildEffects(t, s, root, cfg, "goreleaser release --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
 	s.on("aws ecr get-login-password --profile stable@power --region eu-central-1", stubResult{out: "sekret\n"})
 }
 
@@ -142,7 +142,7 @@ func TestStableGatesFailFast(t *testing.T) {
 
 func TestStableHappyPath(t *testing.T) {
 	p, s, root, stderr := newTestPipeline(t)
-	stubStableBuild(t, s, root)
+	stubStableBuild(t, s, root, p.cfg)
 
 	require.NoError(t, p.ReleaseStable(context.Background()))
 
@@ -316,7 +316,7 @@ func TestStablePartialPublishBranches(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p, s, root, stderr := newTestPipeline(t)
-			stubStableBuild(t, s, root)
+			stubStableBuild(t, s, root, p.cfg)
 			tc.override(s)
 
 			err := p.ReleaseStable(context.Background())
@@ -362,7 +362,7 @@ func TestStablePartialPublishBranches(t *testing.T) {
 // manifest produced.
 func TestStableRefusesForeignChartVersion(t *testing.T) {
 	p, s, root, stderr := newTestPipeline(t)
-	stubStableBuild(t, s, root)
+	stubStableBuild(t, s, root, p.cfg)
 
 	// Packaging drops charts with a version this run did not build.
 	chartsOut := filepath.Join(root, "dist", "url-shortener", "charts")
@@ -422,4 +422,118 @@ func TestReportRing3ConfirmedButBookkeepingDied(t *testing.T) {
 
 	// Ring3 confirmed == nothing left to hand-push: the stage is removed.
 	assert.NoDirExists(t, stage)
+}
+
+// TestStableHappyPathWithExtraCharts: every chart of the tag is
+// published in one run, ring3 last.
+func TestStableHappyPathWithExtraCharts(t *testing.T) {
+	p, s, root, stderr := newExtraTestPipeline(t)
+	stubStableBuild(t, s, root, p.cfg)
+
+	require.NoError(t, p.ReleaseStable(context.Background()))
+	assert.NotContains(t, stderr.String(), "PARTIAL RELEASE")
+
+	pushes := pushesOf(s)
+	require.Len(t, pushes, 3)
+	assert.Equal(t, "url-shortener-infra", argOf(pushes[0], "--name"))
+	assert.Equal(t, "url-shortener-broker", argOf(pushes[1], "--name"))
+	assert.Equal(t, "url-shortener", argOf(pushes[2], "--name"))
+}
+
+// TestStableExtraChartPushFails walks the partial-publish report through
+// an interrupted EXTRA push: ring2 landed, the extra's outcome is
+// UNKNOWN (not absent), ring3 — the commit point — never started, and
+// the recovery names only the charts still owed.
+func TestStableExtraChartPushFails(t *testing.T) {
+	p, s, root, stderr := newExtraTestPipeline(t)
+	stubStableBuild(t, s, root, p.cfg)
+
+	s.on("go tool helmctl push", stubResult{effect: func(c Command) error {
+		if strings.Contains(strings.Join(c.Argv, " "), "--name url-shortener-broker") {
+			return errors.New("broker push boom")
+		}
+
+		return nil
+	}})
+
+	err := p.ReleaseStable(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "broker push boom")
+
+	out := stderr.String()
+	assert.Contains(t, out, "PARTIAL RELEASE — url-shortener/v1.2.3 did NOT complete")
+	assert.Contains(t, out, "    * ring2 chart url-shortener-infra:1.2.3")
+	assert.Contains(t, out, "POSSIBLY PUBLISHED to stable.example.com (push interrupted — outcome UNKNOWN")
+	assert.Contains(t, out, "    * chart url-shortener-broker:1.2.3")
+	assert.Contains(t, out, "NOT published:")
+	assert.Contains(t, out, "    * ring3 chart url-shortener  <- the commit point")
+	assert.Contains(t, out, "RECOVERY — push the missing chart(s) by hand, nothing else")
+	assert.Contains(t, out, "--name url-shortener-broker")
+	assert.Contains(t, out, "the other charts are independent")
+
+	// Ring2 CONFIRMED: re-pushing it would die on the immutable version
+	// tag, so its command must not be advised.
+	assert.NotContains(t, out, "--name url-shortener-infra")
+
+	// The stage holds the recovery artifacts the advice names.
+	stageDirs, globErr := filepath.Glob(filepath.Join(os.TempDir(), "gemaal-charts-stage-*"))
+	require.NoError(t, globErr)
+	require.NotEmpty(t, stageDirs, "recovery stage should have been kept")
+
+	for _, d := range stageDirs {
+		require.NoError(t, os.RemoveAll(d))
+	}
+}
+
+// TestStablePackagingRecoveryNamesExtraCharts: when the run dies before
+// a coherent set exists, the manual-packaging advice must cover every
+// chart the tag owes — an omitted one is a chart nobody would package.
+func TestStablePackagingRecoveryNamesExtraCharts(t *testing.T) {
+	p, s, root, stderr := newExtraTestPipeline(t)
+	stubStableBuild(t, s, root, p.cfg)
+
+	s.on("go tool helmctl package --chart url-shortener/charts/url-shortener-broker",
+		stubResult{err: errors.New("digest missing")})
+
+	err := p.ReleaseStable(context.Background())
+	require.Error(t, err)
+
+	out := stderr.String()
+	assert.Contains(t, out, "RECOVERY — complete chart packaging manually from the generated manifest")
+	assert.Contains(t, out, "package --chart url-shortener/charts/url-shortener-broker")
+	assert.Contains(t, out, "package --chart url-shortener/charts/url-shortener \\")
+}
+
+// TestReportExtraLandedButRing3NeverStarted covers the state a
+// single-extra config cannot reach through stub failures: one extra
+// CONFIRMED, the run dead before ring3 ever started. A landed extra is
+// self-contained and installable, and the report says so — without
+// implying the release happened.
+func TestReportExtraLandedButRing3NeverStarted(t *testing.T) {
+	p, _, _, stderr := newExtraTestPipeline(t)
+
+	st := &stableState{
+		tag:               testTag,
+		version:           "1.2.3",
+		chartVersion:      "1.2.3",
+		goreleaserStarted: true,
+		publishedImages:   true,
+		chartsSelected:    true,
+		startedRing2:      true,
+		confirmedRing2:    true,
+		extras: []extraPush{
+			{name: "url-shortener-broker", tgz: "/stage/broker.tgz", started: true, confirmed: true},
+			{name: "url-shortener-jobs", tgz: "/stage/jobs.tgz"},
+		},
+	}
+
+	p.reportPartialPublish(st, errors.New("killed between extras"))
+
+	out := stderr.String()
+	assert.Contains(t, out, "    * chart url-shortener-broker:1.2.3")
+	assert.Contains(t, out, "NOT published:")
+	assert.Contains(t, out, "    * chart url-shortener-jobs")
+	assert.Contains(t, out, "    * ring3 chart url-shortener  <- the commit point")
+	assert.Contains(t, out, "carry their own digest-pinned images")
+	assert.Contains(t, out, "Treat 1.2.3 as NOT released")
 }

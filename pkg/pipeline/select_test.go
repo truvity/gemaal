@@ -188,3 +188,154 @@ func TestSelectNamesDisplayDir(t *testing.T) {
 	assert.Contains(t, stderr.String(), "dist/url-shortener/charts")
 	assert.NotContains(t, stderr.String(), stage)
 }
+
+// TestSelectExtraCharts is the same table for a config whose tag also
+// produces a chart with no ring semantics. The extra's name begins with
+// ring3's, so the happy case alone proves the scan files each tarball
+// under the LONGEST matching chart name — a first-match-wins scan reads
+// url-shortener-broker-1.2.3 as a second ring3 tarball.
+func TestSelectExtraCharts(t *testing.T) {
+	const hint = "rebuild-hint-command"
+
+	seedRings := func(t *testing.T, dir string) {
+		t.Helper()
+
+		writeChartTgz(t, filepath.Join(dir, "url-shortener-infra-1.2.3.tgz"), "url-shortener-infra", "1.2.3")
+		writeChartTgz(t, filepath.Join(dir, "url-shortener-1.2.3.tgz"), "url-shortener", "1.2.3")
+	}
+
+	cases := []struct {
+		name       string
+		seed       func(t *testing.T, dir string)
+		wantErr    string
+		wantStderr []string
+	}{
+		{
+			name: "coherent set",
+			seed: func(t *testing.T, dir string) {
+				seedRings(t, dir)
+				writeChartTgz(t, filepath.Join(dir, "url-shortener-broker-1.2.3.tgz"), "url-shortener-broker", "1.2.3")
+			},
+		},
+		{
+			name:       "missing extra",
+			seed:       seedRings,
+			wantErr:    "incomplete chart set",
+			wantStderr: []string{"missing:", "url-shortener-broker-*.tgz (url-shortener-broker)"},
+		},
+		{
+			name: "duplicate extra",
+			seed: func(t *testing.T, dir string) {
+				seedRings(t, dir)
+				writeChartTgz(t, filepath.Join(dir, "url-shortener-broker-1.2.3.tgz"), "url-shortener-broker", "1.2.3")
+				writeChartTgz(t, filepath.Join(dir, "url-shortener-broker-1.2.4.tgz"), "url-shortener-broker", "1.2.4")
+			},
+			wantErr: "more than one url-shortener-broker chart",
+			wantStderr: []string{
+				"more than one url-shortener-broker chart",
+				"url-shortener-broker-1.2.3.tgz",
+				"url-shortener-broker-1.2.4.tgz",
+			},
+		},
+		{
+			// The extra shares the tag, so it shares the version. One that
+			// does not is a leftover wearing this release's name.
+			name: "extra from another build",
+			seed: func(t *testing.T, dir string) {
+				seedRings(t, dir)
+				writeChartTgz(t, filepath.Join(dir, "url-shortener-broker-2.0.0.tgz"), "url-shortener-broker", "2.0.0")
+			},
+			wantErr: "incoherent chart set",
+			wantStderr: []string{
+				"url-shortener-broker does not carry the release version",
+				"rings:  1.2.3",
+				"url-shortener-broker: 2.0.0",
+			},
+		},
+		{
+			// Filenames are trusted only until identity verification, and
+			// an extra is verified like every other chart.
+			name: "extra impostor",
+			seed: func(t *testing.T, dir string) {
+				seedRings(t, dir)
+				writeChartTgz(t, filepath.Join(dir, "url-shortener-broker-1.2.3.tgz"), "something-else", "1.2.3")
+			},
+			wantErr: "does not match its filename",
+			wantStderr: []string{
+				"filename claims:  name 'url-shortener-broker', version '1.2.3'",
+				"Chart.yaml says:  name 'something-else', version '1.2.3'",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _, _, stderr := newExtraTestPipeline(t)
+			dir := t.TempDir()
+			tc.seed(t, dir)
+
+			sel, err := p.selectRingCharts(dir, hint, "display/charts")
+
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, "1.2.3", sel.Version)
+				assert.Equal(t, filepath.Join(dir, "url-shortener-infra-1.2.3.tgz"), sel.InfraTgz)
+				assert.Equal(t, filepath.Join(dir, "url-shortener-1.2.3.tgz"), sel.AppTgz)
+				assert.Equal(t, []chartTarball{{
+					Name: "url-shortener-broker",
+					Tgz:  filepath.Join(dir, "url-shortener-broker-1.2.3.tgz"),
+				}}, sel.Extra)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+
+			for _, want := range tc.wantStderr {
+				assert.Contains(t, stderr.String(), want)
+			}
+		})
+	}
+}
+
+// TestSelectWithoutExtraChartsSelectsNothingExtra is the compatibility
+// pin: a config that names no extra charts must select exactly the ring
+// pair it always did — no phantom entry, no changed refusal.
+func TestSelectWithoutExtraChartsSelectsNothingExtra(t *testing.T) {
+	p, _, _, _ := newTestPipeline(t)
+	dir := t.TempDir()
+
+	writeChartTgz(t, filepath.Join(dir, "url-shortener-infra-1.2.3.tgz"), "url-shortener-infra", "1.2.3")
+	writeChartTgz(t, filepath.Join(dir, "url-shortener-1.2.3.tgz"), "url-shortener", "1.2.3")
+
+	sel, err := p.selectRingCharts(dir, "hint", "display/charts")
+	require.NoError(t, err)
+	assert.Empty(t, sel.Extra)
+}
+
+// TestSelectPrefersTheLongestChartName pins the matching rule itself.
+// Chart names of one repo prefix each other, and a first-match-wins scan
+// files the longer chart's tarball under the shorter name — here as a
+// SECOND ring2 tarball, at a version nobody built.
+func TestSelectPrefersTheLongestChartName(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Charts.Extra = []Chart{{Name: "url-shortener-infra-jobs", Path: "url-shortener/charts/jobs"}}
+	require.NoError(t, cfg.validate())
+
+	p, _, _, _ := newPipelineFor(t, cfg)
+	dir := t.TempDir()
+
+	writeChartTgz(t, filepath.Join(dir, "url-shortener-infra-1.2.3.tgz"), "url-shortener-infra", "1.2.3")
+	writeChartTgz(t, filepath.Join(dir, "url-shortener-1.2.3.tgz"), "url-shortener", "1.2.3")
+	writeChartTgz(t, filepath.Join(dir, "url-shortener-infra-jobs-1.2.3.tgz"), "url-shortener-infra-jobs", "1.2.3")
+
+	sel, err := p.selectRingCharts(dir, "hint", "display/charts")
+	require.NoError(t, err)
+	assert.Equal(t, "1.2.3", sel.Version)
+	assert.Equal(t, filepath.Join(dir, "url-shortener-infra-1.2.3.tgz"), sel.InfraTgz)
+	assert.Equal(t, []chartTarball{{
+		Name: "url-shortener-infra-jobs",
+		Tgz:  filepath.Join(dir, "url-shortener-infra-jobs-1.2.3.tgz"),
+	}}, sel.Extra)
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,12 +14,14 @@ import (
 
 // stubBuildEffects scripts the build tools' filesystem effects:
 // goreleaser --clean wipes the dist dir, the manifest generator writes
-// the version document, and each package invocation drops its tarball.
-func stubBuildEffects(t *testing.T, s *stubRunner, root, goreleaserPrefix, version string) {
+// the version document, and each package invocation drops its tarball —
+// one rule per CONFIGURED chart, keyed on the chart path so a config
+// with extra charts scripts them too.
+func stubBuildEffects(t *testing.T, s *stubRunner, root string, cfg *Config, goreleaserPrefix, version string) {
 	t.Helper()
 
-	dist := filepath.Join(root, "dist", "url-shortener")
-	chartsOut := filepath.Join(dist, "charts")
+	dist := filepath.Join(root, filepath.FromSlash(cfg.DistDir))
+	chartsOut := filepath.Join(root, filepath.FromSlash(cfg.ChartsOut()))
 
 	s.on(goreleaserPrefix, stubResult{effect: func(Command) error {
 		return os.RemoveAll(dist)
@@ -32,17 +35,13 @@ func stubBuildEffects(t *testing.T, s *stubRunner, root, goreleaserPrefix, versi
 		return os.WriteFile(filepath.Join(dist, "chart-manifest.yaml"), []byte("version: "+version+"\nimages: {}\n"), 0o644)
 	}})
 
-	s.on("go tool helmctl package --chart url-shortener/charts/url-shortener-infra", stubResult{effect: func(Command) error {
-		writeChartTgz(t, filepath.Join(chartsOut, "url-shortener-infra-"+version+".tgz"), "url-shortener-infra", version)
+	for _, ch := range cfg.Charts.all() {
+		s.on("go tool helmctl package --chart "+ch.Path+" ", stubResult{effect: func(Command) error {
+			writeChartTgz(t, filepath.Join(chartsOut, ch.Name+"-"+version+".tgz"), ch.Name, version)
 
-		return nil
-	}})
-
-	s.on("go tool helmctl package --chart url-shortener/charts/url-shortener --manifest", stubResult{effect: func(Command) error {
-		writeChartTgz(t, filepath.Join(chartsOut, "url-shortener-"+version+".tgz"), "url-shortener", version)
-
-		return nil
-	}})
+			return nil
+		}})
+	}
 }
 
 func TestSnapshotHappyPath(t *testing.T) {
@@ -53,7 +52,7 @@ func TestSnapshotHappyPath(t *testing.T) {
 	// vouches for it.
 	seedCharts(t, root, p.cfg, "0.0.9", StampStable)
 
-	stubBuildEffects(t, s, root, "goreleaser release --nightly --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
 
 	require.NoError(t, p.Snapshot(context.Background()))
 
@@ -140,4 +139,57 @@ func TestSnapshotRefusesManifestWithoutVersion(t *testing.T) {
 	assert.Contains(t, stderr.String(), "no version in dist/url-shortener/chart-manifest.yaml")
 	assert.False(t, s.called("go tool helmctl package"))
 	assert.NoFileExists(t, filepath.Join(dist, "charts", stampFileName))
+}
+
+// packageCalls returns the chart paths of every helmctl package call, in
+// order, paired with whether the call was manifest-driven.
+func packageCalls(s *stubRunner) []string {
+	var calls []string
+
+	for _, c := range s.joinedCalls() {
+		if after, ok := strings.CutPrefix(c, "go tool helmctl package "); ok {
+			calls = append(calls, after)
+		}
+	}
+
+	return calls
+}
+
+// TestSnapshotPackagesExtraCharts proves an extra chart is packaged from
+// the SAME manifest as ring3 — version and digest-pinned values both —
+// and lands before ring3, the commit point.
+func TestSnapshotPackagesExtraCharts(t *testing.T) {
+	p, s, root, _ := newExtraTestPipeline(t)
+	chartsOut := filepath.Join(root, "dist", "url-shortener", "charts")
+
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly", "1.2.3")
+
+	require.NoError(t, p.Snapshot(context.Background()))
+
+	assert.Equal(t, []string{
+		"--chart url-shortener/charts/url-shortener-infra --version 1.2.3 --output dist/url-shortener/charts",
+		"--chart url-shortener/charts/url-shortener-broker --manifest dist/url-shortener/chart-manifest.yaml" +
+			" --require-image-digests --output dist/url-shortener/charts",
+		"--chart url-shortener/charts/url-shortener --manifest dist/url-shortener/chart-manifest.yaml" +
+			" --require-image-digests --output dist/url-shortener/charts",
+	}, packageCalls(s))
+
+	assert.FileExists(t, filepath.Join(chartsOut, "url-shortener-broker-1.2.3.tgz"))
+}
+
+// TestSnapshotWithoutExtraChartsIsUnchanged is the compatibility pin: a
+// config naming no extra charts must package EXACTLY the ring pair it
+// always did — no stray invocation for an empty list, no reordering.
+func TestSnapshotWithoutExtraChartsIsUnchanged(t *testing.T) {
+	p, s, root, _ := newTestPipeline(t)
+
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly", "1.2.3")
+
+	require.NoError(t, p.Snapshot(context.Background()))
+
+	assert.Equal(t, []string{
+		"--chart url-shortener/charts/url-shortener-infra --version 1.2.3 --output dist/url-shortener/charts",
+		"--chart url-shortener/charts/url-shortener --manifest dist/url-shortener/chart-manifest.yaml" +
+			" --require-image-digests --output dist/url-shortener/charts",
+	}, packageCalls(s))
 }

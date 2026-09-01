@@ -3,6 +3,26 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.18.x
+- **0.18.0** — the pipeline config packages more than a ring pair
+  (`charts.extra`). Ring2/ring3 are an INSTALL-ORDERING relationship,
+  but they were also the only way to name a chart, so "one tag produces
+  N charts" and "ring2 installs before ring3" were the same field: a
+  repo whose tag also builds a standalone chart — no database, no ring2
+  dependency, nothing ordering it against the pair — could not name it,
+  and so could not package, push or release it at all (core's
+  `charts/cognito-zitadel-broker` was blocked on exactly this). Extras
+  are packaged like RING3, from the release manifest with
+  `--require-image-digests`, because the manifest supplies both the
+  digest-pinned values and the version; they are pushed BETWEEN ring2
+  and ring3 so the commit point still lands last, and the
+  partial-publish report tracks each with the same started/confirmed
+  split. Names must be unique across the three (a shared name silently
+  overwrites a tarball in the one charts output dir — refused at config
+  load), and tarball-to-chart matching is now by longest `<name>-`
+  prefix, since the pair's hand-written ring2-first ordering does not
+  generalize. An absent or empty `extra` behaves exactly as before.
+
 ## 0.17.x
 - **0.17.0** — the harness sweeps abandoned claim leases: clean exits
   always deleted their own lease, but SIGKILL'd runs left theirs behind

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -26,9 +27,13 @@ type stableState struct {
 	// chartsSelected records that a coherent tarball pair from THIS run
 	// exists: manual push advice naming the staged tarballs is only
 	// honest after that point.
-	chartsSelected  bool
-	startedRing2    bool
-	confirmedRing2  bool
+	chartsSelected bool
+	startedRing2   bool
+	confirmedRing2 bool
+	// extras carry the same started/confirmed split as the rings: an
+	// interrupted push is UNKNOWN, not absent, whether or not the chart
+	// has ring semantics.
+	extras          []extraPush
 	startedRing3    bool
 	confirmedRing3  bool
 	releaseComplete bool
@@ -42,10 +47,18 @@ type stableState struct {
 	appTgz   string
 }
 
+// extraPush tracks one non-ring chart through the push sequence.
+type extraPush struct {
+	name      string
+	tgz       string
+	started   bool
+	confirmed bool
+}
+
 // ReleaseStable is the STABLE RELEASE (the port of release-stable.sh).
 // One fully-gated flow: verify ALL five boundary conditions, then build
 // AND push — images via goreleaser (full validation, no --nightly) and
-// both ring charts via helmctl — in a single run. Nothing is
+// every chart the tag produces via helmctl — in a single run. Nothing is
 // configurable at run time: a stable release is BY DEFINITION the
 // content of a <tagPrefix>v* tag on the pushed tip of the release
 // branch, published to the stable registry.
@@ -62,16 +75,16 @@ type stableState struct {
 //	   for gates a–d: gates that can be skipped aren't gates.
 //
 // NOT ATOMIC — and it deliberately does not claim to be. An OCI registry
-// has no transaction: images, ring2 and ring3 are separate pushes, and a
+// has no transaction: images and every chart are separate pushes, and a
 // failure between them leaves the earlier ones published. What this flow
-// does instead: publishes in strictly increasing order of consumability
-// (images → ring2 → ring3, each less consumable than the next, so the
-// most misleading one lands last — ring3 is the commit point: until it
-// exists the version is not released, and every earlier artifact is
-// harmless on its own), reports what did land — and what MIGHT have
-// landed — when a step fails, and names the failure-point-specific
-// recovery, truthful about the IMMUTABLE_WITH_EXCLUSION stable
-// repositories where a pushed version tag can never be overwritten.
+// does instead: publishes so that the most misleading artifact lands
+// LAST (images → ring2 → the extras → ring3 — ring3 is the commit point:
+// until it exists the version is not released, and every earlier
+// artifact is harmless or unreachable on its own), reports what did land
+// — and what MIGHT have landed — when a step fails, and names the
+// failure-point-specific recovery, truthful about the
+// IMMUTABLE_WITH_EXCLUSION stable repositories where a pushed version
+// tag can never be overwritten.
 func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	if err := p.resolveRoot(ctx); err != nil {
 		return err
@@ -150,9 +163,9 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 
 	st.version = version
 
-	// 4. Both ring charts (the writer lock from step 0 is STILL HELD —
-	// goreleaser --clean cannot touch its inode, so no re-acquisition
-	// happens anywhere in this flow).
+	// 4. Every chart of the tag (the writer lock from step 0 is STILL
+	// HELD — goreleaser --clean cannot touch its inode, so no
+	// re-acquisition happens anywhere in this flow).
 	if err := p.packageCharts(ctx, env, version); err != nil {
 		return err
 	}
@@ -186,6 +199,11 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	st.chartVersion = sel.Version
 	st.infraTgz = sel.InfraTgz
 	st.appTgz = sel.AppTgz
+	st.extras = make([]extraPush, len(sel.Extra))
+
+	for i, ch := range sel.Extra {
+		st.extras[i] = extraPush{name: ch.Name, tgz: ch.Tgz}
+	}
 
 	// Belt and braces: the packaged charts must carry the version this
 	// run's manifest produced, not a version that survived from somewhere
@@ -215,8 +233,10 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 
 	// Least-consumable artifact first: ring2 is inert on its own, ring3
 	// is the commit point that makes the version look released, so ring3
-	// goes last. Each push carries the same started/confirmed split as
-	// goreleaser.
+	// goes last. The extras sit between them — nothing orders them, but
+	// putting them after ring3 would let a run publish the commit point
+	// and then fail with a chart of that same version still missing.
+	// Each push carries the same started/confirmed split as goreleaser.
 	st.startedRing2 = true
 
 	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version); err != nil {
@@ -224,6 +244,17 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	}
 
 	st.confirmedRing2 = true
+
+	for i := range st.extras {
+		st.extras[i].started = true
+
+		if err := p.pushChart(ctx, env, dest, st.extras[i].name, st.extras[i].tgz, sel.Version); err != nil {
+			return err
+		}
+
+		st.extras[i].confirmed = true
+	}
+
 	st.startedRing3 = true
 
 	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version); err != nil {
@@ -233,9 +264,10 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	st.confirmedRing3 = true
 	st.releaseComplete = true
 
-	p.log.Info("stable release complete: images + both ring charts published",
+	p.log.Info("stable release complete: images + every chart of the tag published",
 		slog.String("tag", tag),
 		slog.String("version", version),
+		slog.Int("charts", len(st.extras)+2),
 		slog.String("registry", dest.Registry))
 
 	return nil
@@ -426,6 +458,12 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 			p.errf("    * ring2 chart %s:%s\n", ring2, st.chartVersion)
 		}
 
+		for _, ex := range st.extras {
+			if ex.confirmed {
+				p.errf("    * chart %s:%s\n", ex.name, st.chartVersion)
+			}
+		}
+
 		// A cancellation can land AFTER the ring3 push confirmed but
 		// BEFORE releaseComplete flipped — the release is then fully
 		// published and this report must say so, not imply ring3 is
@@ -437,7 +475,9 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 
 	// Started-but-unconfirmed chart pushes are UNKNOWN, not absent: the
 	// upload may have landed even though helmctl never returned success.
-	if (st.startedRing2 && !st.confirmedRing2) || (st.startedRing3 && !st.confirmedRing3) {
+	unconfirmed := slices.ContainsFunc(st.extras, func(ex extraPush) bool { return ex.started && !ex.confirmed })
+
+	if st.startedRing2 && !st.confirmedRing2 || st.startedRing3 && !st.confirmedRing3 || unconfirmed {
 		p.errf("  POSSIBLY PUBLISHED to %s (push interrupted — outcome UNKNOWN,\n", dest.Registry)
 		p.errf("  check the registry before any retry):\n")
 
@@ -445,16 +485,30 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 			p.errf("    * ring2 chart %s:%s\n", ring2, st.chartVersion)
 		}
 
+		for _, ex := range st.extras {
+			if ex.started && !ex.confirmed {
+				p.errf("    * chart %s:%s\n", ex.name, st.chartVersion)
+			}
+		}
+
 		if st.startedRing3 && !st.confirmedRing3 {
 			p.errf("    * ring3 chart %s:%s\n", ring3, st.chartVersion)
 		}
 	}
 
-	if !st.startedRing2 || !st.startedRing3 {
+	unstarted := slices.ContainsFunc(st.extras, func(ex extraPush) bool { return !ex.started })
+
+	if !st.startedRing2 || !st.startedRing3 || unstarted {
 		p.errf("  NOT published:\n")
 
 		if !st.startedRing2 {
 			p.errf("    * ring2 chart %s\n", ring2)
+		}
+
+		for _, ex := range st.extras {
+			if !ex.started {
+				p.errf("    * chart %s\n", ex.name)
+			}
 		}
 
 		if !st.startedRing3 {
@@ -479,6 +533,11 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 		p.errf("  consumer can resolve this release: the images are unreachable without\n")
 		p.errf("  ring3's digest-pinned values, and ring2 on its own is just an\n")
 		p.errf("  unreferenced infra chart. Treat %s as NOT released.\n", versionOrTag)
+
+		if slices.ContainsFunc(st.extras, func(ex extraPush) bool { return ex.confirmed }) {
+			p.errf("  The extra charts that DID land carry their own digest-pinned images and\n")
+			p.errf("  are installable on their own — but they are not this release.\n")
+		}
 	}
 
 	p.errf("\n")
@@ -505,18 +564,30 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 		p.errf("  The images are complete and correct; only chart pushes are missing, and\n")
 		p.errf("  a full re-run would die in goreleaser on the immutable image tags. This\n")
 		p.errf("  run's validated tarballs are staged in %s — an immutable\n", st.stageDir)
-		p.errf("  snapshot of %s (the ring-pair selector named this coherent\n", p.cfg.ChartsOut())
-		p.errf("  pair), kept for exactly this recovery; remove the directory once done.\n")
+		p.errf("  snapshot of %s (the chart selector named this coherent\n", p.cfg.ChartsOut())
+		p.errf("  set), kept for exactly this recovery; remove the directory once done.\n")
 		p.errf("  For a push marked UNKNOWN above, confirm it is really absent from the\n")
 		p.errf("  registry first — pushing a chart that already landed dies on the\n")
-		p.errf("  immutable version tag. Then push each ring that is missing:\n")
+		p.errf("  immutable version tag. Then push each chart that is missing:\n")
 
 		if !st.confirmedRing2 {
 			p.recoveryPushAdvice(ring2, st.infraTgz, st.chartVersion, dest)
 		}
 
+		for _, ex := range st.extras {
+			if !ex.confirmed {
+				p.recoveryPushAdvice(ex.name, ex.tgz, st.chartVersion, dest)
+			}
+		}
+
 		p.recoveryPushAdvice(ring3, st.appTgz, st.chartVersion, dest)
-		p.errf("  Ring2 before ring3 (install order). Once ring3 is up the release is\n")
+		p.errf("  Ring2 before ring3 (install order)")
+
+		if len(st.extras) > 0 {
+			p.errf("; the other charts are independent and\n  their order does not matter")
+		}
+
+		p.errf(". Once ring3 is up the release is\n")
 		p.errf("  complete — do NOT cut a new tag for this case.\n")
 	case st.publishedImages:
 		p.errf("  RECOVERY — complete chart packaging manually from the generated manifest:\n")
@@ -538,6 +609,17 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 
 		p.errf("      %s package --chart %s \\\n", p.helmctlDisplay(), p.cfg.Charts.Ring2.Path)
 		p.errf("        --version '%s' --output '%s'\n", version, p.cfg.ChartsOut())
+
+		for _, ch := range p.cfg.Charts.Extra {
+			if ch.VendorDependencies {
+				p.errf("      %s dependency update %s\n", p.helmDisplay(), ch.Path)
+			}
+
+			p.errf("      %s package --chart %s \\\n", p.helmctlDisplay(), ch.Path)
+			p.errf("        --manifest '%s' --require-image-digests --output '%s'\n",
+				p.cfg.ManifestPath(), p.cfg.ChartsOut())
+		}
+
 		p.errf("      %s package --chart %s \\\n", p.helmctlDisplay(), p.cfg.Charts.Ring3.Path)
 		p.errf("        --manifest '%s' --require-image-digests --output '%s'\n",
 			p.cfg.ManifestPath(), p.cfg.ChartsOut())

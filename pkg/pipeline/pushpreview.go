@@ -102,13 +102,22 @@ func (p *Pipeline) PushPreview(ctx context.Context) error {
 		return err
 	}
 
-	// 4. Push ring2 first, then ring3 — least-consumable artifact first
-	// (a lone ring3 is the broken half; a lone ring2 is just an
-	// unreferenced infra chart). Two pushes are not one transaction: if
-	// the ring3 push fails, ring2 stays published at that version —
-	// re-running republishes the same coherent pair.
+	// 4. Push ring2 first, then the extras, then ring3 — least-consumable
+	// artifact last-but-one (a lone ring3 is the broken half; a lone ring2
+	// is just an unreferenced infra chart). The extras order among
+	// themselves is meaningless, but ring3 still goes last: it is the
+	// artifact that makes a version look released, so nothing of this
+	// version should be missing once it lands. The pushes are not one
+	// transaction: if a later one fails, the earlier ones stay published
+	// at that version — re-running republishes the same coherent set.
 	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version); err != nil {
 		return err
+	}
+
+	for _, ch := range sel.Extra {
+		if err := p.pushChart(ctx, env, dest, ch.Name, ch.Tgz, sel.Version); err != nil {
+			return err
+		}
 	}
 
 	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version); err != nil {
@@ -117,6 +126,7 @@ func (p *Pipeline) PushPreview(ctx context.Context) error {
 
 	p.log.Info("preview charts pushed",
 		slog.String("version", sel.Version),
+		slog.Int("charts", len(sel.Extra)+2),
 		slog.String("registry", dest.Registry))
 
 	return nil
