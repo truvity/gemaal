@@ -29,7 +29,7 @@ import (
 //     NOT substitute: it implies --skip=publish, which would leave the
 //     digest-pinned charts referencing images that were never pushed;
 //  2. helmctl goreleaser-manifest — digest-pinned release manifest;
-//  3. helmctl package for both ring charts;
+//  3. helmctl package for every chart the tag produces;
 //  4. a `preview` .release-type stamp next to the packaged charts, so
 //     the preview push can refuse charts built for the other registry.
 //
@@ -84,10 +84,10 @@ func (p *Pipeline) Snapshot(ctx context.Context) error {
 		return err
 	}
 
-	// 3. Both ring charts. goreleaser --clean removed the dist dir above;
-	// packageCharts recreates the output dir. The writer lock is STILL
-	// HELD — the wipe cannot touch its inode (the lockfile lives outside
-	// the cleaned dir), so no re-acquisition happens anywhere here.
+	// 3. Every chart of the tag. goreleaser --clean removed the dist dir
+	// above; packageCharts recreates the output dir. The writer lock is
+	// STILL HELD — the wipe cannot touch its inode (the lockfile lives
+	// outside the cleaned dir), so no re-acquisition happens anywhere here.
 	if err := p.packageCharts(ctx, env, version); err != nil {
 		return err
 	}

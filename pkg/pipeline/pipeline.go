@@ -11,17 +11,17 @@
 //     are wired to the preview registry, release-stable to the stable
 //     one; no runtime knob selects a destination. The registry is both a
 //     build-time input and a push-time destination (packaging bakes
-//     digest-pinned, registry-qualified image refs into the ring3
-//     chart), so each build stamps .release-type provenance and the
-//     preview push refuses charts packaged for the other registry.
+//     digest-pinned, registry-qualified image refs into the manifest-
+//     packaged charts), so each build stamps .release-type provenance and
+//     the preview push refuses charts packaged for the other registry.
 //   - The stable release verifies five gates — clean tree, HEAD ==
 //     origin/<releaseBranch>, a <tagPrefix>v* tag on HEAD, that tag
 //     pushed and matching origin, and a CI-provenance warning — ALL
 //     before any build step or credential use. There is deliberately no
 //     escape hatch: gates that can be skipped aren't gates.
-//   - Ring-pair selection accepts exactly one tarball per ring, both
-//     rings on the same version, and re-reads each tarball's own
-//     Chart.yaml so a file merely named like a ring tarball cannot be
+//   - Chart selection accepts exactly one tarball per CONFIGURED chart,
+//     all of them on the same version, and re-reads each tarball's own
+//     Chart.yaml so a file merely named like a chart tarball cannot be
 //     published under an identity it does not carry.
 //   - Push flows freeze the shared charts directory into a private
 //     staging dir under the chart lock, validate the STAGE, and publish
@@ -210,16 +210,26 @@ func (p *Pipeline) manifestVersion() (string, error) {
 
 // packageCharts packages ring2 (vendoring its dependencies first when
 // configured — the helmctl CLI has no --vendor-dependencies flag yet)
-// with the build's version, then ring3 with the digest-pinned manifest.
+// with the build's version, then every extra chart and ring3 last, each
+// with the digest-pinned manifest.
+//
+// Extras are packaged like RING3, not like ring2, and there is
+// deliberately no per-chart knob for it. The manifest supplies two things
+// at once: the values overlay (registry-qualified, digest-pinned image
+// references) and the version. A chart packaged without it would publish
+// whatever its own values.yaml holds — a mutable tag, or the empty
+// placeholders a chart that expects pinning ships — under a version this
+// build never stamped, and the selector's version-coherence check is the
+// only thing that would notice. A knob here is simply a configuration in
+// which one chart of a pinned release ships unpinned. A chart that
+// references no image is unharmed: the overlay lands values nothing reads.
 func (p *Pipeline) packageCharts(ctx context.Context, env []string, version string) error {
 	if err := os.MkdirAll(p.abs(p.cfg.ChartsOut()), 0o755); err != nil {
 		return fmt.Errorf("create charts output dir: %w", err)
 	}
 
-	if p.cfg.Charts.Ring2.VendorDependencies {
-		if err := p.run(ctx, env, p.cfg.Commands.Helm, "dependency", "update", p.cfg.Charts.Ring2.Path); err != nil {
-			return err
-		}
+	if err := p.vendorDependencies(ctx, env, p.cfg.Charts.Ring2); err != nil {
+		return err
 	}
 
 	if err := p.run(ctx, env, p.cfg.Commands.Helmctl,
@@ -231,9 +241,35 @@ func (p *Pipeline) packageCharts(ctx context.Context, env []string, version stri
 		return err
 	}
 
+	// Extras before ring3, the same order the pushes use.
+	for _, ch := range p.cfg.Charts.Extra {
+		if err := p.vendorDependencies(ctx, env, ch); err != nil {
+			return err
+		}
+
+		if err := p.packagePinned(ctx, env, ch); err != nil {
+			return err
+		}
+	}
+
+	return p.packagePinned(ctx, env, p.cfg.Charts.Ring3)
+}
+
+func (p *Pipeline) vendorDependencies(ctx context.Context, env []string, ch Chart) error {
+	if !ch.VendorDependencies {
+		return nil
+	}
+
+	return p.run(ctx, env, p.cfg.Commands.Helm, "dependency", "update", ch.Path)
+}
+
+// packagePinned packages one chart from this build's release manifest,
+// which carries both the digest-pinned values and the version — so
+// nothing about the packaged chart can drift from the build that made it.
+func (p *Pipeline) packagePinned(ctx context.Context, env []string, ch Chart) error {
 	return p.run(ctx, env, p.cfg.Commands.Helmctl,
 		"package",
-		"--chart", p.cfg.Charts.Ring3.Path,
+		"--chart", ch.Path,
 		"--manifest", p.cfg.ManifestPath(),
 		"--require-image-digests",
 		"--output", p.cfg.ChartsOut(),

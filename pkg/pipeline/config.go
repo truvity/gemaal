@@ -28,8 +28,8 @@ const (
 // charts: which registry the chart values point at. The registry is both
 // a build-time input and a push-time destination — `helmctl package
 // --manifest --require-image-digests` bakes fully-qualified,
-// digest-pinned image references (registry included) into the ring3
-// chart at package time — so a push flow must be able to refuse charts
+// digest-pinned image references (registry included) into every
+// manifest-packaged chart — so a push flow must be able to refuse charts
 // packaged for the other registry.
 const stampFileName = ".release-type"
 
@@ -53,8 +53,8 @@ type Registries struct {
 	Stable  Destination `yaml:"stable"`
 }
 
-// Chart names one ring chart: its packaged name and its source path
-// (repo-relative).
+// Chart names one chart of the release: its packaged name and its source
+// path (repo-relative).
 type Chart struct {
 	Name string `yaml:"name"`
 	Path string `yaml:"path"`
@@ -64,15 +64,76 @@ type Chart struct {
 	VendorDependencies bool `yaml:"vendorDependencies"`
 }
 
-// Charts holds the ring pair. Ring2 is the infra chart (inert on its
-// own), ring3 the app chart — the commit point that makes a version look
-// released.
+// Charts names every chart one tag of the repo publishes. Two of them
+// carry RING semantics — an INSTALL-ORDERING relationship: ring2 is the
+// infra chart (inert on its own, installed first as "<release>-infra"),
+// ring3 the app chart, the commit point that makes a version look
+// released, and ring3 drains before ring2 on uninstall.
+//
+// Packaging and install ordering are DIFFERENT concerns, and this struct
+// used to conflate them: two fields, therefore exactly two charts. A repo
+// whose tag also builds a standalone chart — no database, no ring2
+// dependency, nothing that orders it against the pair — had no way to
+// name it, so it could not be packaged, pushed or released at all.
 type Charts struct {
 	Ring2 Chart `yaml:"ring2"`
 	Ring3 Chart `yaml:"ring3"`
+	// Extra are packaged, pushed and released from the SAME tag and share
+	// the ring pair's version, but carry NO ring semantics: nothing
+	// installs them in a fixed order relative to the pair and nothing
+	// drains them before it. They are independent charts of one repo.
+	Extra []Chart `yaml:"extra"`
 	// RepositoryPrefix prefixes the OCI repository each chart pushes to:
 	// <prefix>/<chart name>. Default: <project>/charts.
 	RepositoryPrefix string `yaml:"repositoryPrefix"`
+}
+
+// all returns every chart of the release in PUBLISH order: ring2, the
+// extras, ring3 last. Ring3 is the commit point — the artifact that makes
+// a version look released — so everything else lands before it, extras
+// included even though nothing orders them among themselves.
+func (c Charts) all() []Chart {
+	all := make([]Chart, 0, len(c.Extra)+2)
+	all = append(all, c.Ring2)
+	all = append(all, c.Extra...)
+
+	return append(all, c.Ring3)
+}
+
+// label names a chart in operator-facing messages: the rings by ring,
+// because what those messages are usually about is the pair's ordering
+// or coherence, and an extra by its own name, because nothing orders it.
+func (c Charts) label(name string) string {
+	switch name {
+	case c.Ring2.Name:
+		return "ring2"
+	case c.Ring3.Name:
+		return "ring3"
+	default:
+		return name
+	}
+}
+
+// match maps a packaged tarball's basename (<name>-<version>) to the
+// chart it belongs to, by LONGEST matching "<name>-" prefix.
+//
+// Longest wins because the charts of one repo routinely prefix each
+// other — url-shortener/url-shortener-infra, dms/dms-infra — so a
+// first-match-wins scan files url-shortener-infra-1.2.3 under
+// `url-shortener` at version `infra-1.2.3` the moment the shorter name is
+// tried first. The ring pair kept that safe by hand-ordering ring2 ahead
+// of ring3; an open-ended extra list has no order to hand-write.
+func (c Charts) match(base string) (name, version string, ok bool) {
+	for _, ch := range c.all() {
+		prefix := ch.Name + "-"
+		if !strings.HasPrefix(base, prefix) || len(ch.Name) <= len(name) {
+			continue
+		}
+
+		name, version, ok = ch.Name, strings.TrimPrefix(base, prefix), true
+	}
+
+	return name, version, ok
 }
 
 // Commands holds the external tools as argv vectors — the same
@@ -250,6 +311,28 @@ func (c *Config) validate() error {
 
 	if c.Charts.Ring2.Name == c.Charts.Ring3.Name {
 		return fmt.Errorf("pipeline config: ring2 and ring3 must have distinct chart names (both are %q)", c.Charts.Ring2.Name)
+	}
+
+	// Every chart of the release is packaged into ONE output directory as
+	// <name>-<version>.tgz, so two charts sharing a name overwrite each
+	// other's tarball: the flow then publishes whichever was packaged last
+	// under both identities, and the selector — which keys on filenames —
+	// sees a complete, coherent set. Refuse the configuration instead;
+	// this is not a failure anything downstream can report.
+	claimed := map[string]string{c.Charts.Ring2.Name: "charts.ring2", c.Charts.Ring3.Name: "charts.ring3"}
+
+	for i, ch := range c.Charts.Extra {
+		if ch.Name == "" || ch.Path == "" {
+			return fmt.Errorf("pipeline config: charts.extra[%d] needs both name and path", i)
+		}
+
+		if owner, taken := claimed[ch.Name]; taken {
+			return fmt.Errorf(
+				"pipeline config: charts.extra[%d] name %q is already %s — charts are packaged as <name>-<version>.tgz into %s, so a shared name overwrites a tarball",
+				i, ch.Name, owner, c.ChartsOut())
+		}
+
+		claimed[ch.Name] = fmt.Sprintf("charts.extra[%d]", i)
 	}
 
 	// THE LOCK INVARIANT: flock is inode-based, so a lockfile inside any

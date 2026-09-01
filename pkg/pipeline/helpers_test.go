@@ -37,10 +37,46 @@ commands:
     - [moon, run, url-shortener:build/app/web, url-shortener:build/app/log]
 `
 
+// testExtraConfigYAML is the same project with a THIRD chart: a
+// standalone chart of the same repo that is neither ring — the shape the
+// ring pair could not express. Its name deliberately begins with ring3's
+// (`url-shortener` / `url-shortener-broker`), because that is the
+// collision a first-match-wins tarball scan gets wrong.
+const testExtraConfigYAML = `
+project: url-shortener
+awsRegion: eu-central-1
+registries:
+  preview: {registry: preview.example.com, profile: preview@power}
+  stable: {registry: stable.example.com, profile: stable@power}
+charts:
+  ring2:
+    name: url-shortener-infra
+    path: url-shortener/charts/url-shortener-infra
+    vendorDependencies: true
+  ring3:
+    name: url-shortener
+    path: url-shortener/charts/url-shortener
+  extra:
+    - name: url-shortener-broker
+      path: url-shortener/charts/url-shortener-broker
+commands:
+  preBuild:
+    - [moon, run, url-shortener:build/app/web, url-shortener:build/app/log]
+`
+
 func testConfig(t *testing.T) *Config {
 	t.Helper()
 
 	cfg, err := Parse([]byte(testConfigYAML))
+	require.NoError(t, err)
+
+	return cfg
+}
+
+func testExtraConfig(t *testing.T) *Config {
+	t.Helper()
+
+	cfg, err := Parse([]byte(testExtraConfigYAML))
 	require.NoError(t, err)
 
 	return cfg
@@ -153,12 +189,25 @@ func (s *stubRunner) call(t *testing.T, prefix string) Command {
 func newTestPipeline(t *testing.T) (p *Pipeline, s *stubRunner, root string, stderr *bytes.Buffer) {
 	t.Helper()
 
+	return newPipelineFor(t, testConfig(t))
+}
+
+// newExtraTestPipeline is newTestPipeline against the three-chart config.
+func newExtraTestPipeline(t *testing.T) (p *Pipeline, s *stubRunner, root string, stderr *bytes.Buffer) {
+	t.Helper()
+
+	return newPipelineFor(t, testExtraConfig(t))
+}
+
+func newPipelineFor(t *testing.T, cfg *Config) (p *Pipeline, s *stubRunner, root string, stderr *bytes.Buffer) {
+	t.Helper()
+
 	root = t.TempDir()
 	s = &stubRunner{}
 	s.on("git rev-parse --show-toplevel", stubResult{out: root + "\n"})
 
 	stderr = &bytes.Buffer{}
-	p = New(testConfig(t), s, slog.New(slog.DiscardHandler), stderr)
+	p = New(cfg, s, slog.New(slog.DiscardHandler), stderr)
 
 	return p, s, root, stderr
 }
@@ -200,18 +249,47 @@ func writeChartTgz(t *testing.T, path, chartName, chartVersion string) {
 	})
 }
 
-// seedCharts populates the shared charts output with a coherent ring
-// pair and a stamp.
+// seedCharts populates the shared charts output with a coherent set —
+// one tarball per configured chart — and a stamp.
 func seedCharts(t *testing.T, root string, cfg *Config, version, stamp string) {
 	t.Helper()
 
 	chartsOut := filepath.Join(root, filepath.FromSlash(cfg.ChartsOut()))
-	writeChartTgz(t, filepath.Join(chartsOut, cfg.Charts.Ring2.Name+"-"+version+".tgz"), cfg.Charts.Ring2.Name, version)
-	writeChartTgz(t, filepath.Join(chartsOut, cfg.Charts.Ring3.Name+"-"+version+".tgz"), cfg.Charts.Ring3.Name, version)
+
+	for _, ch := range cfg.Charts.all() {
+		writeChartTgz(t, filepath.Join(chartsOut, ch.Name+"-"+version+".tgz"), ch.Name, version)
+	}
 
 	if stamp != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(chartsOut, stampFileName), []byte(stamp+"\n"), 0o644))
 	}
+}
+
+// pushesOf returns every recorded helmctl push, in order.
+func pushesOf(s *stubRunner) []Command {
+	var pushes []Command
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, c := range s.calls {
+		if strings.HasPrefix(strings.Join(c.Argv, " "), "go tool helmctl push") {
+			pushes = append(pushes, c)
+		}
+	}
+
+	return pushes
+}
+
+// argOf returns the value following flag in a recorded command.
+func argOf(c Command, flag string) string {
+	for i, a := range c.Argv {
+		if a == flag && i+1 < len(c.Argv) {
+			return c.Argv[i+1]
+		}
+	}
+
+	return ""
 }
 
 // assertOnlyGitRan asserts a gate failure stopped the flow before any
