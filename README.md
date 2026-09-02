@@ -160,6 +160,9 @@ destroying what it was told to keep):
 | `GEMAAL_TEST_SKIP_DEPLOY` | skip `Build` and `Deploy`; reuse the standing releases as installed |
 | `GEMAAL_TEST_SKIP_DESTROY` / `GEMAAL_TEST_KEEP` | skip `Teardown`; keep the releases after the run |
 
+Running a suite in CI — one identity per phase, the teardown
+guarantee, release-derived values: [docs/harness-ci.md](docs/harness-ci.md).
+
 Resolution ladders (each rung explicit, first hit wins):
 
 - **namespace**: `Options.Namespace` → `GEMAAL_NAMESPACE` → identity
