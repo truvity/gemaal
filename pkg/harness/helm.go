@@ -192,6 +192,9 @@ type Install struct {
 	// Set passes through as helm --set.
 	Set []string
 
+	// Version passes through as helm --version -- see Pair.Version.
+	Version string
+
 	// Labels is the ledger stamp for this release.
 	Labels Labels
 }
@@ -211,6 +214,10 @@ func (c *Cluster) Install(ctx context.Context, namespace string, in Install) err
 
 	argv := c.helmArgs("upgrade", "--install", in.Release, in.Chart, "--namespace", namespace)
 	argv = append(argv, "--wait", "--timeout", c.helmTimeout().String())
+
+	if in.Version != "" {
+		argv = append(argv, "--version", in.Version)
+	}
 
 	if len(labels) > 0 {
 		argv = append(argv, "--labels", strings.Join(labels, ","))
@@ -259,6 +266,12 @@ type Pair struct {
 	// Set passes through to both releases as helm --set.
 	Set []string
 
+	// Version pins the chart version for both releases -- REQUIRED when
+	// the charts are OCI references (helm's "latest" across prerelease
+	// tags is not a resolution to trust), meaningless for local
+	// tarballs, whose name carries the version.
+	Version string
+
 	// Labels is the ledger stamp, applied to both releases.
 	Labels Labels
 }
@@ -267,8 +280,8 @@ type Pair struct {
 // pre-install hooks (migrations) need the infrastructure standing.
 func (c *Cluster) InstallPair(ctx context.Context, tenant Tenant, p Pair) error {
 	installs := []Install{
-		{Release: InfraRelease(tenant.Release), Chart: p.InfraChart, ValuesFiles: p.ValuesFiles, Set: p.Set, Labels: p.Labels},
-		{Release: tenant.Release, Chart: p.AppChart, ValuesFiles: p.ValuesFiles, Set: p.Set, Labels: p.Labels},
+		{Release: InfraRelease(tenant.Release), Chart: p.InfraChart, ValuesFiles: p.ValuesFiles, Set: p.Set, Version: p.Version, Labels: p.Labels},
+		{Release: tenant.Release, Chart: p.AppChart, ValuesFiles: p.ValuesFiles, Set: p.Set, Version: p.Version, Labels: p.Labels},
 	}
 
 	for i := range installs {
