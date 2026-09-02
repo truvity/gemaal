@@ -92,7 +92,20 @@ func (p *Pipeline) Snapshot(ctx context.Context) error {
 		return err
 	}
 
-	// 4. Provenance stamp: the dev loop only ever produces preview
+	// 4. Push the packaged charts to the preview registry as OCI, under
+	// {registry}/{project}/charts/{name}:{version}. This is what makes a
+	// build consumable OUTSIDE the repository that made it -- a consumer
+	// suite (the SDK e2e repos, DMS-65) installs the ring pair by
+	// version instead of rebuilding core with its own goreleaser key.
+	// helm rides the same docker credential config the image pushes just
+	// used, so no separate login. The ECR repositories themselves are
+	// gitops-created (an OCI push cannot create one); a missing repo
+	// fails HERE, loudly, next to the name it needs.
+	if err := p.pushCharts(ctx, env, dest); err != nil {
+		return err
+	}
+
+	// 5. Provenance stamp: the dev loop only ever produces preview
 	// charts. The stamp completes the chart output — end of the mutation
 	// window, so the lock drops with it.
 	if err := p.writeStamp(StampPreview); err != nil {

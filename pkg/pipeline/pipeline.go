@@ -276,6 +276,31 @@ func (p *Pipeline) packagePinned(ctx context.Context, env []string, ch Chart) er
 	)
 }
 
+// pushCharts publishes every packaged chart tarball to the destination
+// registry as OCI, under {registry}/{project}/charts. The repository
+// per chart is {project}/charts/{name} -- covered by the same
+// {project}/* grant the image pushes use, and created by gitops (an
+// OCI push cannot create an ECR repository).
+func (p *Pipeline) pushCharts(ctx context.Context, env []string, dest Destination) error {
+	charts, err := filepath.Glob(filepath.Join(p.abs(p.cfg.ChartsOut()), "*.tgz"))
+	if err != nil {
+		return fmt.Errorf("list packaged charts: %w", err)
+	}
+
+	if len(charts) == 0 {
+		return fmt.Errorf("no packaged charts to push in %s", p.cfg.ChartsOut())
+	}
+
+	ref := fmt.Sprintf("oci://%s/%s/charts", dest.Registry, p.cfg.Project)
+	for _, chart := range charts {
+		if err := p.run(ctx, env, p.cfg.Commands.Helm, "push", chart, ref); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // writeStamp completes a build's chart output: which registry the chart
 // values point at. The stamp is the last write of the mutation window.
 func (p *Pipeline) writeStamp(value string) error {
