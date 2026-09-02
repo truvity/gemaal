@@ -56,6 +56,15 @@ func TestSnapshotHappyPath(t *testing.T) {
 
 	require.NoError(t, p.Snapshot(context.Background()))
 
+	// Every packaged chart is pushed as OCI to the preview registry
+	// under {project}/charts — what makes the build consumable outside
+	// the repository that made it (DMS-65). One push per configured
+	// chart, addressed to the shared charts ref.
+	for _, ch := range p.cfg.Charts.all() {
+		s.call(t, "helm push "+filepath.Join(chartsOut, ch.Name+"-1.2.3.tgz")+
+			" oci://preview.example.com/url-shortener/charts")
+	}
+
 	// The build is nightly (dirty-capable, still publishing) — never the
 	// full-validation invocation.
 	require.True(t, s.called("goreleaser release --nightly"))
