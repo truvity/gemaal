@@ -184,7 +184,17 @@ type Config struct {
 	// GoreleaserConfig is the -f argument. Default: <projectDir>/.goreleaser.yaml.
 	GoreleaserConfig string `yaml:"goreleaserConfig"`
 	// TagPrefix scopes release tags: <tagPrefix>v*. Default: <project>/.
-	TagPrefix string `yaml:"tagPrefix"`
+	//
+	// A POINTER so that "unset" and "set to empty" are different
+	// answers. The default exists to disambiguate siblings sharing one
+	// monorepo — eudi/v* must not match url-shortener/v* — and a project
+	// that OWNS its repository has no siblings: `dms/v0.33.0` in a
+	// repository containing only dms says nothing the repository name
+	// has not already said. Such a project sets `tagPrefix: ""` and
+	// releases from plain `v*` tags; with a plain string the zero value
+	// is indistinguishable from omission and that choice cannot be
+	// expressed at all.
+	TagPrefix *string `yaml:"tagPrefix"`
 	// ReleaseBranch is the only branch stable releases cut from. Default: master.
 	ReleaseBranch string `yaml:"releaseBranch"`
 
@@ -194,6 +204,17 @@ type Config struct {
 	Commands   Commands   `yaml:"commands"`
 	Lock       Lock       `yaml:"lock"`
 	Hints      Hints      `yaml:"hints"`
+}
+
+// ReleaseTagPrefix is the configured tag prefix, nil-safe: a Config that
+// never went through Parse (hand-built in a test) reads as "no prefix"
+// instead of panicking on the pointer.
+func (c *Config) ReleaseTagPrefix() string {
+	if c.TagPrefix == nil {
+		return ""
+	}
+
+	return *c.TagPrefix
 }
 
 // Load reads, defaults, and validates a pipeline configuration document.
@@ -240,8 +261,9 @@ func (c *Config) applyDefaults() {
 		c.GoreleaserConfig = c.ProjectDir + "/.goreleaser.yaml"
 	}
 
-	if c.TagPrefix == "" {
-		c.TagPrefix = c.Project + "/"
+	if c.TagPrefix == nil {
+		prefix := c.Project + "/"
+		c.TagPrefix = &prefix
 	}
 
 	if c.ReleaseBranch == "" {

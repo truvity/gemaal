@@ -140,6 +140,31 @@ func TestStableGatesFailFast(t *testing.T) {
 	}
 }
 
+// A project that owns its repository releases from PLAIN `v*` tags:
+// gate c must then match `v*`, and the advice it prints when the tag is
+// missing must name the tag a human would actually cut. Pinned because
+// the prefix is a pointer now — a defaulting regression would silently
+// send the gate hunting for `url-shortener/v*` in a repository whose
+// tags are all `v1.2.3`, and every release would refuse itself.
+func TestStableGatePlainTagPrefix(t *testing.T) {
+	cfg, err := Parse([]byte(testConfigYAML + "tagPrefix: \"\"\n"))
+	require.NoError(t, err)
+
+	p, s, _, stderr := newPipelineFor(t, cfg)
+	s.on("git status --porcelain", stubResult{out: ""})
+	s.on("git fetch origin master --tags", stubResult{})
+	s.on("git rev-parse HEAD", stubResult{out: testHeadSha + "\n"})
+	s.on("git rev-parse origin/master", stubResult{out: testHeadSha + "\n"})
+	s.on("git describe --exact-match --match v* --tags HEAD",
+		stubResult{err: errors.New("fatal: no tag exactly matches")})
+
+	err = p.ReleaseStable(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "carries no v* tag")
+	assert.Contains(t, stderr.String(), "git tag -a vX.Y.Z")
+	assert.NotContains(t, stderr.String(), "url-shortener/v")
+}
+
 func TestStableHappyPath(t *testing.T) {
 	p, s, root, stderr := newTestPipeline(t)
 	stubStableBuild(t, s, root, p.cfg)

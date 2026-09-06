@@ -14,7 +14,7 @@ func TestParseDefaults(t *testing.T) {
 	assert.Equal(t, "url-shortener", cfg.ProjectDir)
 	assert.Equal(t, "dist/url-shortener", cfg.DistDir)
 	assert.Equal(t, "url-shortener/.goreleaser.yaml", cfg.GoreleaserConfig)
-	assert.Equal(t, "url-shortener/", cfg.TagPrefix)
+	assert.Equal(t, "url-shortener/", cfg.ReleaseTagPrefix())
 	assert.Equal(t, "master", cfg.ReleaseBranch)
 	assert.Equal(t, "url-shortener/charts", cfg.Charts.RepositoryPrefix)
 	assert.Equal(t, []string{"goreleaser"}, cfg.Commands.Goreleaser)
@@ -30,6 +30,18 @@ func TestParseDefaults(t *testing.T) {
 	assert.Equal(t, "dist/url-shortener/charts/.release-type", cfg.StampPath())
 	assert.Equal(t, "dist/url-shortener/chart-manifest.yaml", cfg.ManifestPath())
 	assert.Equal(t, "url-shortener/charts/url-shortener", cfg.ChartRepository("url-shortener"))
+}
+
+// An EXPLICIT empty prefix must survive defaulting. The prefix exists to
+// keep monorepo siblings' tags apart; a project that owns its repository
+// releases from plain `v*` tags, and defaulting an explicit "" back to
+// "<project>/" would make that configuration unexpressible — the gate
+// would then hunt for a tag nobody cuts and refuse every release.
+func TestParseExplicitEmptyTagPrefix(t *testing.T) {
+	cfg, err := Parse([]byte(testConfigYAML + "tagPrefix: \"\"\n"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "", cfg.ReleaseTagPrefix())
 }
 
 func TestParseValidation(t *testing.T) {
