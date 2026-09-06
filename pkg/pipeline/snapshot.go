@@ -67,9 +67,16 @@ func (p *Pipeline) Snapshot(ctx context.Context) error {
 	}
 
 	// 1. Images. goreleaser runs from the git root (monorepo tag_prefix,
-	// per-project dist). Nightly: publishes from a dirty tree.
+	// per-project dist). Nightly: publishes from a dirty tree. dockers_v2
+	// is skipped here and driven by publishImages — same config, but
+	// pushed by digest and tagged once (the shape an immutable registry
+	// needs; the preview registry gets it for parity).
 	if err := p.run(ctx, env, p.cfg.Commands.Goreleaser,
-		"release", "--nightly", "--clean", "-f", p.cfg.GoreleaserConfig); err != nil {
+		"release", "--nightly", "--clean", "--skip=docker", "-f", p.cfg.GoreleaserConfig); err != nil {
+		return err
+	}
+
+	if _, err := p.publishImages(ctx, env, true); err != nil {
 		return err
 	}
 

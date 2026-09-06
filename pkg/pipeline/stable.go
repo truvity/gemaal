@@ -144,7 +144,13 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	st.goreleaserStarted = true
 
 	if err := p.run(ctx, env, p.cfg.Commands.Goreleaser,
-		"release", "--clean", "-f", p.cfg.GoreleaserConfig); err != nil {
+		"release", "--clean", "--skip=docker", "-f", p.cfg.GoreleaserConfig); err != nil {
+		return err
+	}
+
+	// dockers_v2 images, by this pipeline: every platform pushed by
+	// digest first (no tag can burn), then one tag write per image.
+	if _, err := p.publishImages(ctx, env, false); err != nil {
 		return err
 	}
 
@@ -628,11 +634,13 @@ func (p *Pipeline) reportPartialPublish(st *stableState, failure error) {
 		p.errf("  a new tag: the %s images are already published and immutable.\n", versionOrTag)
 	default:
 		p.errf("  RECOVERY — cut a new PATCH tag:\n")
-		p.errf("  goreleaser died mid-publish, so some of %s's image tags may\n", versionOrTag)
+		p.errf("  the image publish died mid-way, so some of %s's image tags may\n", versionOrTag)
 		p.errf("  already exist and can never be overwritten or completed — the version\n")
-		p.errf("  is burned. Fix the cause, cut the next PATCH tag, release that. The\n")
-		p.errf("  stranded partial artifacts are inert: nothing can reference images\n")
-		p.errf("  that ring3 never pointed at.\n")
+		p.errf("  is burned. (ko images are tagged as they are pushed; dockers_v2 images\n")
+		p.errf("  are pushed by digest and tagged last, so those tags exist only if\n")
+		p.errf("  every build succeeded.) Fix the cause, cut the next PATCH tag, release\n")
+		p.errf("  that. The stranded partial artifacts are inert: nothing can reference\n")
+		p.errf("  images that ring3 never pointed at.\n")
 	}
 
 	p.errf("============================================================================\n")

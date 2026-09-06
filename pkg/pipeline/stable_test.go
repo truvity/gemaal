@@ -35,7 +35,7 @@ func stubStableBuild(t *testing.T, s *stubRunner, root string, cfg *Config) {
 	t.Helper()
 
 	stubGatesPass(s)
-	stubBuildEffects(t, s, root, cfg, "goreleaser release --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
+	stubBuildEffects(t, s, root, cfg, "goreleaser release --clean --skip=docker -f url-shortener/.goreleaser.yaml", "1.2.3")
 	s.on("aws ecr get-login-password --profile stable@power --region eu-central-1", stubResult{out: "sekret\n"})
 }
 
