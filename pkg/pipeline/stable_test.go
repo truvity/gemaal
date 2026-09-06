@@ -166,6 +166,9 @@ func TestStableGatePlainTagPrefix(t *testing.T) {
 }
 
 func TestStableHappyPath(t *testing.T) {
+	// The laptop path, wherever the test runs: CI sets GITHUB_ACTIONS.
+	t.Setenv("GITHUB_ACTIONS", "")
+
 	p, s, root, stderr := newTestPipeline(t)
 	stubStableBuild(t, s, root, p.cfg)
 
