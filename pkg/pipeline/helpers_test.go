@@ -206,6 +206,13 @@ func newPipelineFor(t *testing.T, cfg *Config) (p *Pipeline, s *stubRunner, root
 	s = &stubRunner{}
 	s.on("git rev-parse --show-toplevel", stubResult{out: root + "\n"})
 
+	// A goreleaser config with no dockers_v2: the image step is a no-op
+	// for the flow tests, which script goreleaser as a stub. The image
+	// step has its own tests (images_test.go).
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "url-shortener"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "url-shortener", ".goreleaser.yaml"),
+		[]byte("project_name: url-shortener\n"), 0o644))
+
 	stderr = &bytes.Buffer{}
 	p = New(cfg, s, slog.New(slog.DiscardHandler), stderr)
 

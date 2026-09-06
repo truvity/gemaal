@@ -52,7 +52,7 @@ func TestSnapshotHappyPath(t *testing.T) {
 	// vouches for it.
 	seedCharts(t, root, p.cfg, "0.0.9", StampStable)
 
-	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly --clean -f url-shortener/.goreleaser.yaml", "1.2.3")
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly --clean --skip=docker -f url-shortener/.goreleaser.yaml", "1.2.3")
 
 	require.NoError(t, p.Snapshot(context.Background()))
 

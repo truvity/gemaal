@@ -144,6 +144,9 @@ type Commands struct {
 	Helm       []string `yaml:"helm"`
 	Helmctl    []string `yaml:"helmctl"`
 	AWS        []string `yaml:"aws"`
+	// Docker drives the dockers_v2 image builds (buildx) that this
+	// pipeline runs INSTEAD of goreleaser — see publishImages for why.
+	Docker []string `yaml:"docker"`
 	// PreBuild commands run by release-stable ONLY, after the five gates
 	// pass and before goreleaser (gates that run after a build are not
 	// gates). The snapshot flow runs none: its caller's task deps are
@@ -288,6 +291,10 @@ func (c *Config) applyDefaults() {
 
 	if len(c.Commands.AWS) == 0 {
 		c.Commands.AWS = []string{"aws"}
+	}
+
+	if len(c.Commands.Docker) == 0 {
+		c.Commands.Docker = []string{"docker"}
 	}
 
 	if c.Lock.File == "" {
