@@ -171,8 +171,9 @@ func TestStableHappyPath(t *testing.T) {
 
 	require.NoError(t, p.ReleaseStable(context.Background()))
 
-	// Gate e always speaks: laptop provenance is interim.
+	// Gate e speaks on a laptop: the break-glass path says so.
 	assert.Contains(t, stderr.String(), "WARNING: stable release from a laptop")
+	assert.Contains(t, stderr.String(), "BREAK-GLASS")
 	assert.NotContains(t, stderr.String(), "PARTIAL RELEASE")
 
 	// Pre-build runs AFTER the gates (gates that run after a build are
@@ -451,6 +452,22 @@ func TestReportRing3ConfirmedButBookkeepingDied(t *testing.T) {
 
 // TestStableHappyPathWithExtraCharts: every chart of the tag is
 // published in one run, ring3 last.
+// TestStableOnCIRecordsProvenance: on GitHub Actions gate e is a
+// provenance record, not the laptop warning — that warning printed
+// word for word on the first stable-tier release (dms v0.37.2).
+func TestStableOnCIRecordsProvenance(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_RUN_ID", "123")
+
+	p, s, root, stderr := newTestPipeline(t)
+	stubStableBuild(t, s, root, p.cfg)
+
+	require.NoError(t, p.ReleaseStable(context.Background()))
+	assert.NotContains(t, stderr.String(), "WARNING: stable release from a laptop")
+	assert.NotContains(t, stderr.String(), "PARTIAL RELEASE")
+	assert.True(t, s.called("goreleaser release --clean"))
+}
+
 func TestStableHappyPathWithExtraCharts(t *testing.T) {
 	p, s, root, stderr := newExtraTestPipeline(t)
 	stubStableBuild(t, s, root, p.cfg)
