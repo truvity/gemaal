@@ -390,14 +390,27 @@ func (p *Pipeline) stableGates(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("tag %s differs between local and origin", tag)
 	}
 
-	// Gate e: CI provenance. The laptop entrypoint IS the release path
-	// until a CI release job exists — but only until then.
+	// Gate e: CI provenance. The release job exists (every private
+	// project's release.yaml, on the stable tier since INF-640), so the
+	// laptop path is break-glass: it still works, and it says so. On
+	// GitHub Actions the gate records the provenance instead — the
+	// warning used to print there too, word for word (dms v0.37.2).
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		p.log.Info("CI provenance",
+			slog.String("repository", os.Getenv("GITHUB_REPOSITORY")),
+			slog.String("run_id", os.Getenv("GITHUB_RUN_ID")),
+			slog.String("run_attempt", os.Getenv("GITHUB_RUN_ATTEMPT")),
+			slog.String("runner", os.Getenv("RUNNER_NAME")),
+			slog.String("ref", os.Getenv("GITHUB_REF")))
+
+		return tag, nil
+	}
+
 	p.errf("============================================================================\n")
-	p.errf("  WARNING: stable release from a laptop\n")
+	p.errf("  WARNING: stable release from a laptop — BREAK-GLASS path\n")
 	p.errf("  --------------------------------------------------------------------------\n")
-	p.errf("  This command is the INTERIM stand-in for a CI release job. The moment CI\n")
-	p.errf("  exists, this local path should be retired to break-glass only: stable\n")
-	p.errf("  artifacts should have CI provenance, not laptop provenance.\n")
+	p.errf("  The release job is the release path: push the tag and let CI build it.\n")
+	p.errf("  Use this command only when CI cannot (and say so in the tag message).\n")
 	p.errf("  Gates verified: clean tree, HEAD == origin/%s, tag on HEAD, tag\n", branch)
 	p.errf("  pushed. What CANNOT be verified here: that this machine's toolchain\n")
 	p.errf("  matches CI's. Proceeding.\n")
