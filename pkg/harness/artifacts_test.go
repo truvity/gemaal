@@ -49,3 +49,35 @@ func TestChartTgzsMissingDir(t *testing.T) {
 	_, _, err := ChartTgzs(filepath.Join(t.TempDir(), "nope"), "dms")
 	require.ErrorContains(t, err, "not found")
 }
+
+// The ring2-only lane's whole point: an app chart that was never built
+// is the NORMAL state here, not an incomplete pair. ChartTgzs rejects
+// this same directory, and must keep doing so -- the two answer
+// different questions.
+func TestInfraChartTgzWithoutAppChart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dms-infra-0.0.1-abc.tgz"), nil, 0o600))
+
+	infra, err := InfraChartTgz(dir, "dms")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "dms-infra-0.0.1-abc.tgz"), infra)
+
+	_, _, pairErr := ChartTgzs(dir, "dms")
+	require.Error(t, pairErr, "ChartTgzs must still refuse a half-built pair")
+}
+
+// The app chart must never be mistaken for the infra one: "dms-" is a
+// prefix of "dms-infra-", so a careless match returns the wrong chart
+// and the lane installs the daemons it exists to skip.
+func TestInfraChartTgzIgnoresAppChart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dms-0.0.1-abc.tgz"), nil, 0o600))
+
+	_, err := InfraChartTgz(dir, "dms")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dms-infra-*.tgz")
+}

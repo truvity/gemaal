@@ -50,6 +50,33 @@ func EnsureKubeconfig(gitRoot string) {
 	}
 }
 
+// InfraChartTgz locates the packaged RING 2 chart alone, for callers that
+// deploy infrastructure without the application: a suite that needs the
+// project's database and none of its daemons.
+//
+// Separate from ChartTgzs rather than a flag on it, because the two
+// answer different questions. ChartTgzs asks "is the ring pair complete"
+// and an absent app chart is its error; here an absent app chart is the
+// NORMAL state -- nothing built it, deliberately -- and demanding one
+// would make the cheap path build every image it exists to avoid.
+func InfraChartTgz(chartsDir, project string) (string, error) {
+	entries, err := os.ReadDir(chartsDir)
+	if err != nil {
+		return "", fmt.Errorf("packaged charts not found: %w", err)
+	}
+
+	prefix := project + "-infra-"
+
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".tgz") && strings.HasPrefix(name, prefix) {
+			return filepath.Join(chartsDir, name), nil
+		}
+	}
+
+	return "", fmt.Errorf("no packaged %s chart in %s", prefix+"*.tgz", chartsDir)
+}
+
 // ChartTgzs locates the packaged ring pair in chartsDir
 // (dist/{project}/charts after the snapshot pipeline): the infra chart
 // is {project}-infra-*.tgz, the app chart {project}-*.tgz. Errors state
@@ -104,6 +131,36 @@ func BuildArtifacts(ctx context.Context, cfg *gemaalcfg.Config, project, gitRoot
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// DeployInfra installs RING 2 ALONE: the project's databases, queues and
+// claims, without the application that normally sits on them.
+//
+// The lane this exists for is a test suite that needs a real database
+// (CNPG rather than a container) and never calls the application: with
+// DeployPair it waits for every image to build and every daemon to roll
+// out to reach a DSN. Uninstall is UninstallPair as usual -- it removes
+// the app release too, and a release that was never installed is not an
+// error.
+func DeployInfra(
+	ctx context.Context,
+	cluster *Cluster,
+	tenant Tenant,
+	gitRoot, project string,
+	valuesFiles, set []string,
+) error {
+	infraTgz, err := InfraChartTgz(filepath.Join(gitRoot, "dist", project, "charts"), project)
+	if err != nil {
+		return fmt.Errorf("%w — package it first (helmctl package --chart charts/%s-infra)", err, project)
+	}
+
+	return cluster.Install(ctx, tenant.Namespace, Install{
+		Release:     InfraRelease(tenant.Release),
+		Chart:       infraTgz,
+		ValuesFiles: valuesFiles,
+		Set:         set,
+		Labels:      Labels{ExecutionID: DefaultExecutionID(time.Now())},
+	})
 }
 
 // DeployPair installs the packaged ring pair from dist/{project}/charts
