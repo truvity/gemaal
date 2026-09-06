@@ -268,13 +268,23 @@ func (p *Pipeline) assembleContext(d *dockerV2, projectDir string) (string, erro
 	return ctxDir, nil
 }
 
-// copyPath copies a file or a directory tree, following the source's
-// modes. Symlinks are copied as the file they point at — the way a
-// tar-based context would see them.
+// copyPath copies a file or a directory tree, keeping the source's
+// modes. Symlinks are copied AS symlinks, never followed — the way a
+// tar context carries them. Following them is wrong twice over: a
+// workspace's node_modules links packages back into the tree it lives
+// in (a cycle, and megabytes of duplicate copies), and the first such
+// link met in service was a directory, which a file copy cannot open
+// ("copy_file_range: is a directory", dms#20). A link that points
+// outside the context dangles there, which only matters to a
+// Dockerfile that COPYs it — none in this estate does.
 func copyPath(src, dst string) error {
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return copySymlink(src, dst)
 	}
 
 	if !info.IsDir() {
@@ -292,17 +302,33 @@ func copyPath(src, dst string) error {
 		}
 
 		target := filepath.Join(dst, rel)
-		if d.IsDir() {
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			return copySymlink(path, target)
+		case d.IsDir():
 			return os.MkdirAll(target, 0o755)
 		}
 
-		fi, err := os.Stat(path)
+		fi, err := d.Info()
 		if err != nil {
 			return err
 		}
 
 		return copyFileWithMode(path, target, fi.Mode())
 	})
+}
+
+func copySymlink(src, dst string) error {
+	link, err := os.Readlink(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
+	return os.Symlink(link, dst)
 }
 
 func copyFileWithMode(src, dst string, mode fs.FileMode) error {

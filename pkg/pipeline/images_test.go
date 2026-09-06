@@ -58,6 +58,11 @@ func seedImageProject(t *testing.T, root, version string) {
 	require.NoError(t, os.WriteFile(filepath.Join(proj, "Dockerfile"), []byte("FROM scratch\nCOPY bundle/web/ /app/\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(proj, "bundle", "web", "index.js"), []byte("js"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(proj, "bundle", "web", "assets", "a.css"), []byte("css"), 0o644))
+	// A workspace-style node_modules: a link to a directory and a link
+	// back up the tree (a cycle if followed) — dms#20's failure shape.
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, "bundle", "web", "node_modules"), 0o755))
+	require.NoError(t, os.Symlink("../assets", filepath.Join(proj, "bundle", "web", "node_modules", "assets-link")))
+	require.NoError(t, os.Symlink("../..", filepath.Join(proj, "bundle", "web", "node_modules", "up")))
 
 	dist := filepath.Join(root, "dist", "url-shortener")
 	require.NoError(t, os.MkdirAll(dist, 0o755))
@@ -140,6 +145,11 @@ func TestPublishImagesDigestFirstTagOnce(t *testing.T) {
 	assert.FileExists(t, filepath.Join(ctxDir, "Dockerfile"))
 	assert.FileExists(t, filepath.Join(ctxDir, "bundle", "web", "index.js"))
 	assert.FileExists(t, filepath.Join(ctxDir, "bundle", "web", "assets", "a.css"))
+	for _, l := range []string{"assets-link", "up"} {
+		fi, err := os.Lstat(filepath.Join(ctxDir, "bundle", "web", "node_modules", l))
+		require.NoError(t, err)
+		assert.NotZero(t, fi.Mode()&os.ModeSymlink, "%s copied as a symlink, not followed", l)
+	}
 
 	// artifacts.json: the ko entry kept, one "Docker Image" per tag added
 	// in goreleaser's own shape (helmctl reads name + extra.Digest).
