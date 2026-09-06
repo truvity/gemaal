@@ -330,8 +330,8 @@ func (p *Pipeline) stableGates(ctx context.Context) (string, error) {
 	}
 
 	// Gate c: HEAD must carry the release tag (goreleaser's monorepo
-	// tag prefix).
-	pattern := p.cfg.TagPrefix + "v*"
+	// tag prefix, or none at all for a project that owns its repository).
+	pattern := p.cfg.ReleaseTagPrefix() + "v*"
 
 	tag, err := p.output(ctx, nil, []string{"git"},
 		"describe", "--exact-match", "--match", pattern, "--tags", "HEAD")
@@ -339,7 +339,7 @@ func (p *Pipeline) stableGates(ctx context.Context) (string, error) {
 		p.errf("error: HEAD carries no '%s' tag.\n", pattern)
 		p.errf("       A stable release is the content of a release tag. Create and push one first:\n")
 		p.errf("       git tag -a %svX.Y.Z -m '%s vX.Y.Z' && git push origin %svX.Y.Z\n",
-			p.cfg.TagPrefix, p.cfg.Project, p.cfg.TagPrefix)
+			p.cfg.ReleaseTagPrefix(), p.cfg.Project, p.cfg.ReleaseTagPrefix())
 
 		return "", fmt.Errorf("HEAD carries no %s tag", pattern)
 	}

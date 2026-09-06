@@ -22,6 +22,10 @@ project: url-shortener
 projectDir: url-shortener
 distDir: dist/url-shortener
 goreleaserConfig: url-shortener/.goreleaser.yaml
+# Release tags are <tagPrefix>v*. The default, "<project>/", keeps
+# monorepo siblings' tags apart. A project that OWNS its repository has
+# no siblings to disambiguate from and sets `tagPrefix: ""` — an
+# explicit empty string, which is honoured, unlike omitting the key.
 tagPrefix: url-shortener/
 releaseBranch: master
 
