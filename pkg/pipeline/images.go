@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -457,32 +459,28 @@ func (p *Pipeline) tagImage(ctx context.Context, env []string, plan *imagePlan) 
 		return publishedImage{}, fmt.Errorf("tag %s: %w", plan.id, err)
 	}
 
-	// Read the manifest as JSON and take its top-level digest, rather
-	// than `--format {{.Manifest.Digest}}`. When the tag resolves to an
-	// OCI image INDEX -- which it does the moment the build carries SBOM
-	// or provenance attestations, so `.Manifest` is the index and not a
-	// single descriptor -- the bare `.Digest` template does not render a
-	// field and buildx falls back to its human-readable dump, whose first
-	// line is `Name:` and which then fails the sha256 check. `{{json
-	// .Manifest}}` carries the index's own digest at the top level for
-	// both shapes (index and single manifest), so one path serves both.
-	out, err := p.output(ctx, env, p.cfg.Commands.Docker,
-		"buildx", "imagetools", "inspect", plan.image+":"+plan.tags[0], "--format", "{{json .Manifest}}")
+	// The tag's digest is the sha256 of the exact manifest bytes the
+	// registry serves, so compute it from those bytes: `imagetools
+	// inspect --raw` returns them verbatim (buildx suppresses the
+	// trailing newline for precisely this use), in every buildx version.
+	//
+	// This deliberately does NOT go through a --format template. The tag
+	// resolves to an OCI image INDEX the moment the build carries SBOM or
+	// provenance attestations, and `{{.Manifest.Digest}}` renders nothing
+	// for an index -- buildx then falls back to a human-readable dump and
+	// the sha256 check fails with "unexpected digest". `{{json .Manifest}}`
+	// avoids that, but still trusts buildx to REPORT the digest correctly;
+	// hashing the raw bytes is the digest by construction, the same one
+	// ArgoCD and Kargo resolve the tag to, and it owes nothing to buildx's
+	// output wording.
+	raw, err := p.output(ctx, env, p.cfg.Commands.Docker,
+		"buildx", "imagetools", "inspect", plan.image+":"+plan.tags[0], "--raw")
 	if err != nil {
 		return publishedImage{}, fmt.Errorf("inspect %s: %w", plan.id, err)
 	}
 
-	var manifest struct {
-		Digest string `json:"digest"`
-	}
-	if err := json.Unmarshal([]byte(out), &manifest); err != nil {
-		return publishedImage{}, fmt.Errorf("inspect %s: parse manifest JSON: %w", plan.id, err)
-	}
-
-	digest := strings.TrimSpace(manifest.Digest)
-	if !strings.HasPrefix(digest, "sha256:") {
-		return publishedImage{}, fmt.Errorf("inspect %s: unexpected digest %q", plan.id, digest)
-	}
+	sum := sha256.Sum256([]byte(raw))
+	digest := "sha256:" + hex.EncodeToString(sum[:])
 
 	return publishedImage{
 		ID:        plan.id,

@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -92,10 +94,37 @@ func stubImagePublish(s *stubRunner) {
 		return os.WriteFile(meta, []byte(`{"containerimage.digest":"sha256:`+strings.ReplaceAll(platform, "/", "-")+`"}`), 0o644)
 	}})
 	s.on("docker buildx imagetools create", stubResult{})
-	// `imagetools inspect --format "{{json .Manifest}}"` returns the
-	// manifest as JSON with its digest at the top level — the shape
-	// tagImage parses, for both a single manifest and an OCI index.
-	s.on("docker buildx imagetools inspect", stubResult{out: `{"digest":"sha256:index"}` + "\n"})
+	// `imagetools inspect --raw` returns the exact manifest bytes the
+	// registry serves; tagImage takes their sha256 as the digest. The
+	// stub serves a fixed index blob, and tests assert the digest equals
+	// its hash (rawIndexBytes / rawIndexDigest), so the assertion owes
+	// nothing to a hand-copied sha256.
+	s.on("docker buildx imagetools inspect", stubResult{out: rawIndexBytes})
+}
+
+// rawIndexBytes is a stand-in for what `imagetools inspect --raw` emits:
+// the verbatim bytes of an OCI image index (a build with attestations),
+// with no trailing newline — buildx suppresses it for this use. Built
+// from a per-manifest helper so no single source line runs long.
+var rawIndexBytes = `{"schemaVersion":2,` +
+	`"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[` +
+	rawIndexManifest("sha256:3f8f61749c4a930dca6a5e6f38055945697f36abc051347423db27bdff4a2bd2", "amd64", "linux") + "," +
+	rawIndexManifest("sha256:2e84142cecd8a251335bb03b556dd8430dc3893eca7d9b5a63d57ec146ff90f5", "unknown", "unknown") + "," +
+	rawIndexManifest("sha256:92172740fde376e32cf5dd514ecb70d400b2b4369d75b26ca1b1bfdabd22b99b", "arm64", "linux") +
+	`]}`
+
+// rawIndexManifest renders one descriptor of the index above.
+func rawIndexManifest(digest, arch, os string) string {
+	return `{"mediaType":"application/vnd.oci.image.manifest.v1+json",` +
+		`"digest":"` + digest + `",` +
+		`"platform":{"architecture":"` + arch + `","os":"` + os + `"}}`
+}
+
+// rawIndexDigest is the digest the registry serves that index under:
+// sha256 of exactly rawIndexBytes, the same value tagImage computes.
+func rawIndexDigest() string {
+	sum := sha256.Sum256([]byte(rawIndexBytes))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func TestPublishImagesDigestFirstTagOnce(t *testing.T) {
@@ -113,7 +142,7 @@ func TestPublishImagesDigestFirstTagOnce(t *testing.T) {
 	require.Len(t, images, 1)
 	assert.Equal(t, "reg/url-shortener/web", images[0].Image)
 	assert.Equal(t, []string{"1.2.3", "latest"}, images[0].Tags)
-	assert.Equal(t, "sha256:index", images[0].Digest)
+	assert.Equal(t, rawIndexDigest(), images[0].Digest)
 
 	// One build per platform, each pushed BY DIGEST — never a tag.
 	calls := s.joinedCalls()
@@ -172,7 +201,7 @@ func TestPublishImagesDigestFirstTagOnce(t *testing.T) {
 	assert.Equal(t, "Docker Manifest", artifacts[0].Type)
 	assert.Equal(t, "reg/url-shortener/web:1.2.3", artifacts[1].Name)
 	assert.Equal(t, "Docker Image", artifacts[1].Type)
-	assert.Equal(t, "sha256:index", artifacts[1].Extra.Digest)
+	assert.Equal(t, rawIndexDigest(), artifacts[1].Extra.Digest)
 	assert.Equal(t, "url-shortener-web", artifacts[1].Extra.ID)
 	assert.Equal(t, []string{"linux/amd64", "linux/arm64"}, artifacts[1].Extra.Platforms)
 	assert.Equal(t, "reg/url-shortener/web:latest", artifacts[2].Name)
@@ -239,65 +268,34 @@ func TestPublishImagesNoDockersV2IsANoop(t *testing.T) {
 }
 
 // A build that carries SBOM/provenance attestations resolves its tag to
-// an OCI image INDEX, so `imagetools inspect --format "{{json .Manifest}}"`
-// returns the index — a mediaType, a top-level digest, and a manifests
-// array of the per-arch images plus the attestation manifests. tagImage
-// must read the index's own digest from the top level, not stumble over
-// the nested manifests. This is the shape that broke the older
-// `{{.Manifest.Digest}}` template, which rendered nothing for an index
-// and let buildx fall back to a human-readable dump.
+// an OCI image INDEX. tagImage takes the digest from the sha256 of the
+// raw manifest bytes, so it is the digest the registry serves the index
+// under -- the same one ArgoCD and Kargo resolve -- regardless of the
+// nested per-arch and attestation manifests. This is the shape that broke
+// the older `{{.Manifest.Digest}}` template, which rendered nothing for
+// an index and let buildx fall back to a human-readable dump.
 func TestPublishImagesReadsDigestFromAttestationIndex(t *testing.T) {
 	p, s, root, _ := newTestPipeline(t)
 	require.NoError(t, p.resolveRoot(context.Background()))
 	seedImageProject(t, root, "1.2.3")
-	stubImagePublish(s)
-
-	const indexJSON = `{
-  "schemaVersion": 2,
-  "mediaType": "application/vnd.oci.image.index.v1+json",
-  "digest": "sha256:c5574b42048b6b83ee4636282e7a9310b9dfc18f3c6bd83350ff4c860df05a52",
-  "size": 1609,
-  "manifests": [
-    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:3f8f61749c4a930dca6a5e6f38055945697f36abc051347423db27bdff4a2bd2","platform":{"architecture":"amd64","os":"linux"}},
-    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:2e84142cecd8a251335bb03b556dd8430dc3893eca7d9b5a63d57ec146ff90f5","platform":{"architecture":"unknown","os":"unknown"}},
-    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:92172740fde376e32cf5dd514ecb70d400b2b4369d75b26ca1b1bfdabd22b99b","platform":{"architecture":"arm64","os":"linux"}}
-  ]
-}`
-	s.on("docker buildx imagetools inspect", stubResult{out: indexJSON + "\n"})
+	stubImagePublish(s) // serves rawIndexBytes from `imagetools inspect --raw`
 
 	images, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
 	require.NoError(t, err)
 	require.Len(t, images, 1)
-	// The index's own digest, not one of the nested per-arch manifests.
-	assert.Equal(t, "sha256:c5574b42048b6b83ee4636282e7a9310b9dfc18f3c6bd83350ff4c860df05a52", images[0].Digest)
-}
+	// The digest is the hash of the exact index bytes, not a nested one.
+	assert.Equal(t, rawIndexDigest(), images[0].Digest)
 
-// A manifest whose JSON carries no digest, or output that is not JSON at
-// all (the human-readable dump buildx prints when a format template does
-// not apply), fails loudly rather than pinning a chart to an empty or
-// garbage digest.
-func TestPublishImagesRejectsManifestWithoutDigest(t *testing.T) {
-	t.Run("case=no digest field", func(t *testing.T) {
-		p, s, root, _ := newTestPipeline(t)
-		require.NoError(t, p.resolveRoot(context.Background()))
-		seedImageProject(t, root, "1.2.3")
-		stubImagePublish(s)
-		s.on("docker buildx imagetools inspect", stubResult{out: `{"mediaType":"application/vnd.oci.image.index.v1+json"}` + "\n"})
-
-		_, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unexpected digest")
-	})
-
-	t.Run("case=human-readable dump, not JSON", func(t *testing.T) {
-		p, s, root, _ := newTestPipeline(t)
-		require.NoError(t, p.resolveRoot(context.Background()))
-		seedImageProject(t, root, "1.2.3")
-		stubImagePublish(s)
-		s.on("docker buildx imagetools inspect", stubResult{out: "Name:      reg/url-shortener/web:1.2.3\nMediaType: application/vnd.oci.image.index.v1+json\n"})
-
-		_, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "parse manifest JSON")
-	})
+	// The digest comes from --raw bytes, never a --format template: that
+	// independence from buildx's output wording is the point of the fix.
+	var inspect string
+	for _, c := range s.joinedCalls() {
+		if strings.HasPrefix(c, "docker buildx imagetools inspect") {
+			inspect = c
+			break
+		}
+	}
+	require.NotEmpty(t, inspect, "imagetools inspect was never called")
+	assert.Contains(t, inspect, "--raw")
+	assert.NotContains(t, inspect, "--format")
 }
