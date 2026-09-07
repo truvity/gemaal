@@ -457,13 +457,29 @@ func (p *Pipeline) tagImage(ctx context.Context, env []string, plan *imagePlan) 
 		return publishedImage{}, fmt.Errorf("tag %s: %w", plan.id, err)
 	}
 
+	// Read the manifest as JSON and take its top-level digest, rather
+	// than `--format {{.Manifest.Digest}}`. When the tag resolves to an
+	// OCI image INDEX -- which it does the moment the build carries SBOM
+	// or provenance attestations, so `.Manifest` is the index and not a
+	// single descriptor -- the bare `.Digest` template does not render a
+	// field and buildx falls back to its human-readable dump, whose first
+	// line is `Name:` and which then fails the sha256 check. `{{json
+	// .Manifest}}` carries the index's own digest at the top level for
+	// both shapes (index and single manifest), so one path serves both.
 	out, err := p.output(ctx, env, p.cfg.Commands.Docker,
-		"buildx", "imagetools", "inspect", plan.image+":"+plan.tags[0], "--format", "{{.Manifest.Digest}}")
+		"buildx", "imagetools", "inspect", plan.image+":"+plan.tags[0], "--format", "{{json .Manifest}}")
 	if err != nil {
 		return publishedImage{}, fmt.Errorf("inspect %s: %w", plan.id, err)
 	}
 
-	digest := strings.TrimSpace(out)
+	var manifest struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.Unmarshal([]byte(out), &manifest); err != nil {
+		return publishedImage{}, fmt.Errorf("inspect %s: parse manifest JSON: %w", plan.id, err)
+	}
+
+	digest := strings.TrimSpace(manifest.Digest)
 	if !strings.HasPrefix(digest, "sha256:") {
 		return publishedImage{}, fmt.Errorf("inspect %s: unexpected digest %q", plan.id, digest)
 	}

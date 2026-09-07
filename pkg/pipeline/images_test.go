@@ -92,7 +92,10 @@ func stubImagePublish(s *stubRunner) {
 		return os.WriteFile(meta, []byte(`{"containerimage.digest":"sha256:`+strings.ReplaceAll(platform, "/", "-")+`"}`), 0o644)
 	}})
 	s.on("docker buildx imagetools create", stubResult{})
-	s.on("docker buildx imagetools inspect", stubResult{out: "sha256:index\n"})
+	// `imagetools inspect --format "{{json .Manifest}}"` returns the
+	// manifest as JSON with its digest at the top level — the shape
+	// tagImage parses, for both a single manifest and an OCI index.
+	s.on("docker buildx imagetools inspect", stubResult{out: `{"digest":"sha256:index"}` + "\n"})
 }
 
 func TestPublishImagesDigestFirstTagOnce(t *testing.T) {
@@ -233,4 +236,68 @@ func TestPublishImagesNoDockersV2IsANoop(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, images)
 	assert.False(t, s.called("docker"))
+}
+
+// A build that carries SBOM/provenance attestations resolves its tag to
+// an OCI image INDEX, so `imagetools inspect --format "{{json .Manifest}}"`
+// returns the index — a mediaType, a top-level digest, and a manifests
+// array of the per-arch images plus the attestation manifests. tagImage
+// must read the index's own digest from the top level, not stumble over
+// the nested manifests. This is the shape that broke the older
+// `{{.Manifest.Digest}}` template, which rendered nothing for an index
+// and let buildx fall back to a human-readable dump.
+func TestPublishImagesReadsDigestFromAttestationIndex(t *testing.T) {
+	p, s, root, _ := newTestPipeline(t)
+	require.NoError(t, p.resolveRoot(context.Background()))
+	seedImageProject(t, root, "1.2.3")
+	stubImagePublish(s)
+
+	const indexJSON = `{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "digest": "sha256:c5574b42048b6b83ee4636282e7a9310b9dfc18f3c6bd83350ff4c860df05a52",
+  "size": 1609,
+  "manifests": [
+    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:3f8f61749c4a930dca6a5e6f38055945697f36abc051347423db27bdff4a2bd2","platform":{"architecture":"amd64","os":"linux"}},
+    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:2e84142cecd8a251335bb03b556dd8430dc3893eca7d9b5a63d57ec146ff90f5","platform":{"architecture":"unknown","os":"unknown"}},
+    {"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:92172740fde376e32cf5dd514ecb70d400b2b4369d75b26ca1b1bfdabd22b99b","platform":{"architecture":"arm64","os":"linux"}}
+  ]
+}`
+	s.on("docker buildx imagetools inspect", stubResult{out: indexJSON + "\n"})
+
+	images, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
+	require.NoError(t, err)
+	require.Len(t, images, 1)
+	// The index's own digest, not one of the nested per-arch manifests.
+	assert.Equal(t, "sha256:c5574b42048b6b83ee4636282e7a9310b9dfc18f3c6bd83350ff4c860df05a52", images[0].Digest)
+}
+
+// A manifest whose JSON carries no digest, or output that is not JSON at
+// all (the human-readable dump buildx prints when a format template does
+// not apply), fails loudly rather than pinning a chart to an empty or
+// garbage digest.
+func TestPublishImagesRejectsManifestWithoutDigest(t *testing.T) {
+	t.Run("case=no digest field", func(t *testing.T) {
+		p, s, root, _ := newTestPipeline(t)
+		require.NoError(t, p.resolveRoot(context.Background()))
+		seedImageProject(t, root, "1.2.3")
+		stubImagePublish(s)
+		s.on("docker buildx imagetools inspect", stubResult{out: `{"mediaType":"application/vnd.oci.image.index.v1+json"}` + "\n"})
+
+		_, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected digest")
+	})
+
+	t.Run("case=human-readable dump, not JSON", func(t *testing.T) {
+		p, s, root, _ := newTestPipeline(t)
+		require.NoError(t, p.resolveRoot(context.Background()))
+		seedImageProject(t, root, "1.2.3")
+		stubImagePublish(s)
+		s.on("docker buildx imagetools inspect", stubResult{out: "Name:      reg/url-shortener/web:1.2.3\nMediaType: application/vnd.oci.image.index.v1+json\n"})
+
+		_, err := p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parse manifest JSON")
+	})
 }
