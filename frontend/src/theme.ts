@@ -1,7 +1,7 @@
 import { createTheme } from "@mui/material/styles";
 
 // The console's Material theme — same shape as the github-roster reference
-// console (gateway-auth/docs/console-stack.md), teal swapped for the pump's
+// console, teal swapped for the pump's
 // blue.
 export const theme = createTheme({
   palette: {

@@ -106,8 +106,11 @@ config:
   authz:
     adminGroups: []
     groupPrefix: "emp:"
-    groupsClaim: groups
     tokenAudiences: []
+    # access-issuer, as in a token's `iss`, and this service's client id
+    # there. Empty issuerURL: only TokenReview callers authenticate.
+    issuerURL: ""
+    audience: ""
   hold:
     default: 8h
     max: 168h

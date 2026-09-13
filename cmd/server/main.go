@@ -17,6 +17,8 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/urfave/cli/v3"
 
+	"github.com/truvity/access-roster/identity"
+
 	"github.com/truvity/gemaal/pkg/authn"
 	"github.com/truvity/gemaal/pkg/config"
 	"github.com/truvity/gemaal/pkg/engine"
@@ -110,8 +112,8 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 		eng.S3 = s3Client
 	}
 
-	// TokenReview needs the cluster; outside one (local development) the
-	// authenticator falls back to gateway-JWT parsing alone.
+	// TokenReview needs the cluster; outside one (local development) only
+	// issuer-signed tokens authenticate.
 	var reviewer authn.TokenReviewer
 
 	kubeReviewer, err := authn.NewInClusterTokenReviewer(cfg.Authz.TokenAudiences)
@@ -125,9 +127,21 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 		return nil, nil, fmt.Errorf("token reviewer: %w", err)
 	}
 
-	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: cfg.Authz.GroupsClaim}
+	auth := &authn.Authenticator{Reviewer: reviewer}
+
+	switch {
+	case cfg.Authz.IssuerURL == "":
+		log.Warn("authz.issuerURL is empty: people's tokens will not authenticate")
+	case cfg.Authz.Audience == "":
+		// An issuer without an audience accepts a token minted for any
+		// client it serves; refuse to start in that posture.
+		return nil, nil, errors.New("authz.audience is required when authz.issuerURL is set")
+	default:
+		auth.Issuer = &identity.Issuer{URL: cfg.Authz.IssuerURL, Audience: cfg.Authz.Audience}
+	}
+
 	if cfg.Authz.UserinfoURL != "" {
-		auth.Enricher = &authn.UserinfoEnricher{URL: cfg.Authz.UserinfoURL}
+		log.Warn("authz.userinfoURL is ignored: people's tokens are verified against authz.issuerURL instead")
 	}
 	history := engine.NewHistory(historyCapacity)
 

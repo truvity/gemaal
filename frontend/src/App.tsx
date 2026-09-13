@@ -6,7 +6,7 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import { UserBadge, signOutUrl } from "@truvity/gateway-auth/react";
+import { UserBadge } from "@truvity/access-roster/react";
 import { fetchMe, fetchVersion } from "./api";
 import { useAsync } from "./hooks";
 import { TenantsView } from "./TenantsView";
@@ -46,7 +46,7 @@ export function App() {
             {TABS.map((k) => <Tab key={k} value={k} label={labels[k]} component="a" href={`#${k}`} sx={{ minHeight: 48 }} />)}
           </Tabs>
           <Box sx={{ ml: "auto" }}>
-            <UserBadge me={me} signOutHref={signOutUrl()} emphasizeRoles={["admin"]} />
+            {me && <UserBadge identity={me} emphasize={["admin"]} signInHref="/oauth2/start" />}
           </Box>
         </Toolbar>
       </AppBar>

@@ -13,11 +13,11 @@
     "@connectrpc/connect-web": "^2.1.2",
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
+    "@mui/icons-material": "^9.0.0",
     "@mui/material": "^9.0.0",
-    "@truvity/gateway-auth": "github:truvity/gateway-auth#v0.7.1",
+    "@truvity/access-roster": "^1.6.5",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@mui/icons-material": "^9.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

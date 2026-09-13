@@ -80,13 +80,12 @@ type fakeAuth struct {
 	identities map[string]authn.Identity
 }
 
-func (f *fakeAuth) Authenticate(_ context.Context, authorization string) (authn.Identity, error) {
-	const scheme = "Bearer "
-	if len(authorization) <= len(scheme) {
+func (f *fakeAuth) Authenticate(_ context.Context, token string) (authn.Identity, error) {
+	if token == "" {
 		return authn.Identity{}, authn.ErrNoCredentials
 	}
 
-	identity, ok := f.identities[authorization[len(scheme):]]
+	identity, ok := f.identities[token]
 	if !ok {
 		return authn.Identity{}, errors.New("unknown token")
 	}
@@ -149,10 +148,10 @@ func testView() *engine.View {
 
 // tokens of the cast: an owner, an admin, a foreigner, a CI workload.
 var identities = map[string]authn.Identity{
-	"owner-group": {Subject: "123", Email: "someone@example.com", Groups: []string{"emp:jdoe"}, Method: authn.MethodGatewayJWT},
-	"owner-email": {Subject: "j.doe@example.com", Email: "J.Doe@example.com", Method: authn.MethodGatewayJWT},
-	"admin":       {Subject: "root@example.com", Email: "root@example.com", Groups: []string{"cluster-devel:cluster:admin"}, Method: authn.MethodGatewayJWT},
-	"foreigner":   {Subject: "x@example.com", Email: "x@example.com", Groups: []string{"emp:other"}, Method: authn.MethodGatewayJWT},
+	"owner-group": {Subject: "123", Email: "someone@example.com", Groups: []string{"emp:jdoe"}, Method: authn.MethodIssuer},
+	"owner-email": {Subject: "j.doe@example.com", Email: "J.Doe@example.com", Method: authn.MethodIssuer},
+	"admin":       {Subject: "root@example.com", Email: "root@example.com", Groups: []string{"cluster-devel:cluster:admin"}, Method: authn.MethodIssuer},
+	"foreigner":   {Subject: "x@example.com", Email: "x@example.com", Groups: []string{"emp:other"}, Method: authn.MethodIssuer},
 	"workload":    {Subject: "system:serviceaccount:ci-truvity-bar:tester", Groups: []string{"system:serviceaccounts"}, Method: authn.MethodTokenReview},
 }
 
@@ -188,6 +187,20 @@ func bearer[T any](req *connect.Request[T], token string) *connect.Request[T] {
 	req.Header().Set("Authorization", "Bearer "+token)
 
 	return req
+}
+
+// The console's session token arrives in the access-proxy's forwarded
+// header, not Authorization; without reading it the web console could never
+// authenticate anything.
+func TestForwardedSessionTokenAuthenticates(t *testing.T) {
+	client, _ := newTestService(t, nil, &fakeKeeper{})
+
+	req := connect.NewRequest(&gemaalv1.GetMeRequest{})
+	req.Header().Set("X-Auth-Request-Access-Token", "owner-email")
+
+	resp, err := client.GetMe(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "J.Doe@example.com", resp.Msg.GetEmail())
 }
 
 // --- Plan -----------------------------------------------------------------
