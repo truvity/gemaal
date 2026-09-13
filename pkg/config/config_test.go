@@ -126,15 +126,12 @@ func TestNewDefaults(t *testing.T) {
 	assert.Empty(t, cfg.TierValues(), "no tiers configured means nothing is watched")
 }
 
-// The issuer keys parse, and the retired userinfoURL still does: the config
-// is strict, and a deployment that sets it must keep starting until its
-// values drop the key.
+// The issuer keys parse.
 func TestAuthzIssuerKeys(t *testing.T) {
 	cfg, err := config.Parse([]byte(`
 authz:
   issuerURL: https://access.example.com
   audience: gemaal
-  userinfoURL: https://access.example.com/userinfo
 `))
 	require.NoError(t, err)
 

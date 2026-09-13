@@ -139,10 +139,6 @@ func wire(ctx context.Context, cfg *config.Config, log *slog.Logger) (*service.S
 	default:
 		auth.Issuer = &identity.Issuer{URL: cfg.Authz.IssuerURL, Audience: cfg.Authz.Audience}
 	}
-
-	if cfg.Authz.UserinfoURL != "" {
-		log.Warn("authz.userinfoURL is ignored: people's tokens are verified against authz.issuerURL instead")
-	}
 	history := engine.NewHistory(historyCapacity)
 
 	svc := service.New(service.Deps{
