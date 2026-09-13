@@ -132,11 +132,6 @@ type Authz struct {
 	// Audience a person's token must carry: this service's own client id
 	// at the issuer (the console's access-proxy client).
 	Audience string `yaml:"audience"`
-
-	// UserinfoURL is IGNORED. It named the Zitadel-era userinfo enrichment,
-	// which verified tokens replace; it is still accepted so a deployment
-	// that sets it keeps starting, and goes in the next release.
-	UserinfoURL string `yaml:"userinfoURL"`
 }
 
 // Hold bounds the Checkout/Extend keep-until stamps.
