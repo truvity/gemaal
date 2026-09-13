@@ -20,7 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	gatewayauth "github.com/truvity/gateway-auth"
+	accessidentity "github.com/truvity/access-roster/identity"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -45,7 +45,7 @@ type Housekeeper interface {
 // Authenticator resolves an Authorization header to an identity.
 // *authn.Authenticator satisfies it; tests inject fakes.
 type Authenticator interface {
-	Authenticate(ctx context.Context, authorization string) (authn.Identity, error)
+	Authenticate(ctx context.Context, token string) (authn.Identity, error)
 }
 
 // Deps wires a Service.
@@ -429,12 +429,11 @@ func (s *Service) authenticate(ctx context.Context, header http.Header) (authn.I
 		return authn.Identity{}, connect.NewError(connect.CodeUnauthenticated, errors.New("no authenticator configured"))
 	}
 
-	// ForwardAuthorization normalizes the two ways a credential arrives:
-	// Authorization verbatim (CLI, service accounts), or the gateway's
-	// X-Auth-Request-Access-Token (a browser session behind oauth2-proxy),
-	// which gains the Bearer scheme. Without this the web console could
-	// never authenticate its mutations.
-	caller, err := s.deps.Auth.Authenticate(ctx, gatewayauth.ForwardAuthorization(gatewayauth.HeaderGetter(header.Get)))
+	// TokenFrom reads the two ways a credential arrives: the access-proxy's
+	// X-Auth-Request-Access-Token (a browser session), or an ordinary
+	// Authorization bearer (CLI, service accounts). Both are verified by
+	// the authenticator; neither is trusted for having arrived.
+	caller, err := s.deps.Auth.Authenticate(ctx, accessidentity.TokenFrom(&http.Request{Header: header}))
 	if err != nil {
 		if errors.Is(err, authn.ErrNoCredentials) {
 			return authn.Identity{}, connect.NewError(connect.CodeUnauthenticated, err)

@@ -29,7 +29,6 @@ const (
 	DefaultTierLabel            = "tenancy.truvity.io/tier"
 	DefaultPersonalNamespace    = "emp-{slug}"
 	DefaultGroupPrefix          = "emp:"
-	DefaultGroupsClaim          = "groups"
 	DefaultHoldDefault          = 8 * time.Hour
 	DefaultHoldMax              = 7 * 24 * time.Hour
 	// DefaultAWSRegion is where the estate lives (the PIA policy and the
@@ -115,10 +114,6 @@ type Authz struct {
 	// claim ("emp:{slug}"); DefaultGroupPrefix when empty.
 	GroupPrefix string `yaml:"groupPrefix"`
 
-	// GroupsClaim names the OIDC claim carrying groups;
-	// DefaultGroupsClaim when empty.
-	GroupsClaim string `yaml:"groupsClaim"`
-
 	// TokenAudiences are passed to TokenReview; empty means the API
 	// server's default audience.
 	TokenAudiences []string `yaml:"tokenAudiences"`
@@ -129,9 +124,18 @@ type Authz struct {
 	// nobody default.
 	AdminUsers []string `yaml:"adminUsers"`
 
-	// UserinfoURL, when set, lets the service resolve email and role
-	// assertions server-side for bare gateway identities (the OIDC
-	// userinfo endpoint). Empty disables enrichment.
+	// IssuerURL is access-issuer, exactly as it appears in a token's
+	// `iss`. People's tokens are verified against its keys; empty refuses
+	// every token the cluster's TokenReview does not vouch for.
+	IssuerURL string `yaml:"issuerURL"`
+
+	// Audience a person's token must carry: this service's own client id
+	// at the issuer (the console's access-proxy client).
+	Audience string `yaml:"audience"`
+
+	// UserinfoURL is IGNORED. It named the Zitadel-era userinfo enrichment,
+	// which verified tokens replace; it is still accepted so a deployment
+	// that sets it keeps starting, and goes in the next release.
 	UserinfoURL string `yaml:"userinfoURL"`
 }
 
@@ -240,10 +244,6 @@ func (c *Config) applyDefaults() {
 
 	if c.Authz.GroupPrefix == "" {
 		c.Authz.GroupPrefix = DefaultGroupPrefix
-	}
-
-	if c.Authz.GroupsClaim == "" {
-		c.Authz.GroupsClaim = DefaultGroupsClaim
 	}
 
 	if c.Hold.Default == 0 {

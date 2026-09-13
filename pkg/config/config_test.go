@@ -121,10 +121,25 @@ func TestNewDefaults(t *testing.T) {
 	assert.Equal(t, config.DefaultTierLabel, cfg.TierLabel)
 	assert.Equal(t, config.DefaultPersonalNamespace, cfg.Identity.PersonalNamespace)
 	assert.Equal(t, config.DefaultGroupPrefix, cfg.Authz.GroupPrefix)
-	assert.Equal(t, config.DefaultGroupsClaim, cfg.Authz.GroupsClaim)
 	assert.Equal(t, config.DefaultHoldDefault, cfg.Hold.Default.Std())
 	assert.Equal(t, config.DefaultHoldMax, cfg.Hold.Max.Std())
 	assert.Empty(t, cfg.TierValues(), "no tiers configured means nothing is watched")
+}
+
+// The issuer keys parse, and the retired userinfoURL still does: the config
+// is strict, and a deployment that sets it must keep starting until its
+// values drop the key.
+func TestAuthzIssuerKeys(t *testing.T) {
+	cfg, err := config.Parse([]byte(`
+authz:
+  issuerURL: https://access.example.com
+  audience: gemaal
+  userinfoURL: https://access.example.com/userinfo
+`))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://access.example.com", cfg.Authz.IssuerURL)
+	assert.Equal(t, "gemaal", cfg.Authz.Audience)
 }
 
 // TestAWSRegionResolution pins the region ladder: document beats

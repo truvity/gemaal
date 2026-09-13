@@ -10,8 +10,9 @@ import (
 	"github.com/truvity/gemaal/frontend"
 )
 
-// consoleDist is the built SPA (Vite/React/MUI — the fleet console stack;
-// gateway-auth/docs/console-stack.md) rooted at its dist/ directory.
+// consoleDist is the built SPA (Vite/React/MUI — a console behind
+// access-roster; access-roster/docs/connect/console-app.md) rooted at its
+// dist/ directory.
 var consoleDist, _ = fs.Sub(frontend.Assets, "dist")
 
 // registerConsole serves the web console at the root: GET / is the SPA shell

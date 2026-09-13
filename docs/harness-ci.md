@@ -15,7 +15,7 @@ here:
 | phase | needs | identity |
 |---|---|---|
 | Build (`pipeline snapshot`) | ECR push, CodeArtifact read, go-build-cache **write** | the runner pool's ambient pod identity |
-| suite (`go test`) | the project's test resources (S3/KMS/...) | the test profile (Zitadel identity) |
+| suite (`go test`) | the project's test resources (S3/KMS/...) | the test profile (`devel-test`, through access-issuer) |
 
 The test profile deliberately holds none of the pool's infrastructure
 grants ("infrastructure is the pool's business" — gitops managed

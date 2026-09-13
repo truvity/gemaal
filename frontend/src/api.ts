@@ -1,4 +1,5 @@
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import type { Identity } from "@truvity/access-roster";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type { Duration, Timestamp } from "@bufbuild/protobuf/wkt";
 import { GemaalService, ActionKind } from "./gen/gemaal/v1/gemaal_pb.js";
@@ -151,18 +152,36 @@ export async function history(signal?: AbortSignal): Promise<SweepRow[]> {
   });
 }
 
-export interface Me { name?: string; email?: string; role?: string }
+// The access-proxy's sign-out: oauth2-proxy's endpoint, which clears this
+// console's session and continues to the issuer.
+const signOutUrl = "/oauth2/sign_out";
 
-export async function fetchMe(signal?: AbortSignal): Promise<Me & { admin: boolean }> {
-  const resp = await client.getMe({}, { signal });
-  return {
-    // Never the raw subject: for a human that is the IdP's numeric user id.
-    // With no name the badge falls back to the email, which reads right.
-    name: resp.name || undefined,
-    email: resp.email || undefined,
-    role: resp.admin ? "admin" : undefined,
-    admin: resp.admin,
-  };
+// fetchMe asks the service who the caller is, in access-roster's Identity
+// shape so the shared UserBadge renders it. The service stays the authority
+// on `admin`: it verified the token and applies its own admin rails.
+//
+// Resolves rather than throws. Unauthenticated is "signed-out"; anything
+// else is "unknown" -- a signed-in person must not be shown a sign-in
+// button because one request failed.
+export async function fetchMe(signal?: AbortSignal): Promise<Identity & { admin: boolean }> {
+  try {
+    const resp = await client.getMe({}, { signal });
+    return {
+      status: "signed-in",
+      name: resp.name || undefined,
+      email: resp.email || undefined,
+      roles: resp.admin ? ["admin"] : [],
+      groups: resp.groups,
+      signOutUrl,
+      admin: resp.admin,
+    };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    if (ConnectError.from(err).code === Code.Unauthenticated) {
+      return { status: "signed-out", admin: false };
+    }
+    return { status: "unknown", error: String(err), admin: false };
+  }
 }
 
 export async function fetchVersion(signal?: AbortSignal): Promise<string> {

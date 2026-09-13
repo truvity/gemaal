@@ -42,57 +42,6 @@ func (s *stubReviewer) Review(_ context.Context, token string) (authn.Identity, 
 	return s.identity, s.authenticated, s.err
 }
 
-func TestNoBearerTokenRefused(t *testing.T) {
-	auth := &authn.Authenticator{GroupsClaim: "groups"}
-
-	for _, header := range []string{"", "Basic dXNlcg==", "Bearer ", "Bearer"} {
-		_, err := auth.Authenticate(context.Background(), header)
-		require.ErrorIs(t, err, authn.ErrNoCredentials, "header %q", header)
-	}
-}
-
-func TestGatewayJWTClaims(t *testing.T) {
-	auth := &authn.Authenticator{GroupsClaim: "groups"}
-
-	token := jwt(t, map[string]any{
-		"sub":    "123",
-		"email":  "j.doe@example.com",
-		"groups": []any{"emp:jdoe", "cluster-devel:cluster:viewer"},
-	})
-
-	identity, err := auth.Authenticate(context.Background(), "Bearer "+token)
-	require.NoError(t, err)
-
-	assert.Equal(t, "123", identity.Subject)
-	assert.Equal(t, "j.doe@example.com", identity.Email)
-	assert.Equal(t, []string{"emp:jdoe", "cluster-devel:cluster:viewer"}, identity.Groups)
-	assert.Equal(t, authn.MethodGatewayJWT, identity.Method)
-}
-
-func TestGatewayJWTSingleStringGroup(t *testing.T) {
-	// Providers disagree about whether one group is a string or an array.
-	auth := &authn.Authenticator{GroupsClaim: "groups"}
-
-	token := jwt(t, map[string]any{"email": "a@b.c", "groups": "emp:jdoe"})
-
-	identity, err := auth.Authenticate(context.Background(), "Bearer "+token)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"emp:jdoe"}, identity.Groups)
-	assert.Equal(t, "a@b.c", identity.Subject, "email backfills a missing sub")
-}
-
-func TestGatewayJWTGarbageRefused(t *testing.T) {
-	auth := &authn.Authenticator{GroupsClaim: "groups"}
-
-	for _, token := range []string{"not-a-jwt", "a.!!!.c", "a." + base64.RawURLEncoding.EncodeToString([]byte("[]")) + ".c"} {
-		_, err := auth.Authenticate(context.Background(), "Bearer "+token)
-		require.Error(t, err, "token %q", token)
-	}
-
-	_, err := auth.Authenticate(context.Background(), "Bearer "+jwt(t, map[string]any{}))
-	require.ErrorContains(t, err, "no identity claims")
-}
-
 func TestTokenReviewWinsForWorkloads(t *testing.T) {
 	reviewer := &stubReviewer{
 		identity: authn.Identity{
@@ -102,35 +51,24 @@ func TestTokenReviewWinsForWorkloads(t *testing.T) {
 		},
 		authenticated: true,
 	}
-	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: "groups"}
+	auth := &authn.Authenticator{Reviewer: reviewer, Issuer: &stubIssuer{err: errors.New("must not be asked")}}
 
-	identity, err := auth.Authenticate(context.Background(), "Bearer sa-token")
+	identity, err := auth.Authenticate(context.Background(), "sa-token")
 	require.NoError(t, err)
 	assert.Equal(t, "system:serviceaccount:ci-truvity-bar:tester", identity.Subject)
 	assert.Equal(t, authn.MethodTokenReview, identity.Method)
 	assert.Equal(t, []string{"sa-token"}, reviewer.reviewed)
 }
 
-func TestUnrecognizedTokenFallsThroughToClaims(t *testing.T) {
-	reviewer := &stubReviewer{authenticated: false}
-	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: "groups"}
-
-	token := jwt(t, map[string]any{"email": "j.doe@example.com"})
-
-	identity, err := auth.Authenticate(context.Background(), "Bearer "+token)
-	require.NoError(t, err)
-	assert.Equal(t, authn.MethodGatewayJWT, identity.Method)
-	assert.Equal(t, "j.doe@example.com", identity.Email)
-}
-
 func TestBrokenReviewerFailsClosed(t *testing.T) {
-	// An unreachable authority is not a license to downgrade to the
-	// weaker parse.
+	// An unreachable authority is not a license to try a different one.
 	reviewer := &stubReviewer{err: errors.New("apiserver down")}
-	auth := &authn.Authenticator{Reviewer: reviewer, GroupsClaim: "groups"}
+	issuer := &stubIssuer{}
+	auth := &authn.Authenticator{Reviewer: reviewer, Issuer: issuer}
 
-	_, err := auth.Authenticate(context.Background(), "Bearer "+jwt(t, map[string]any{"email": "a@b.c"}))
+	_, err := auth.Authenticate(context.Background(), jwt(t, map[string]any{"email": "a@b.c"}))
 	require.ErrorContains(t, err, "apiserver down")
+	assert.Empty(t, issuer.verified, "the issuer must not be tried after the reviewer failed")
 }
 
 func TestIdentityInAny(t *testing.T) {

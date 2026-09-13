@@ -67,8 +67,11 @@ identity:
 authz:
   adminGroups: []
   groupPrefix: "emp:"
-  groupsClaim: groups
   tokenAudiences: []
+  # People's tokens are verified against access-issuer's keys and must
+  # carry this service's client id as their audience.
+  issuerURL: https://access.example.com
+  audience: gemaal
 
 # Bounds for the Checkout/Extend keep-until stamps.
 hold:

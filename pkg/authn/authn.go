@@ -1,4 +1,4 @@
-// Package authn turns a request's Authorization header into an Identity.
+// Package authn turns a request's bearer token into an Identity.
 //
 // Two kinds of callers reach the mutating RPCs:
 //
@@ -6,35 +6,32 @@
 //     authenticated with a TokenReview against the cluster's own API —
 //     the nats-auth-callout pattern — so the API server, not this
 //     service, is the authority on what the token means.
-//   - humans, arriving through the gateway. Envoy's SecurityPolicy runs
-//     the OIDC login, validates the JWT against the issuer's JWKS, and
-//     forwards the access token in the Authorization header (roster's
-//     header exactly). This package reads the claims off that forwarded
-//     token; it does not re-validate the signature — the gateway just
-//     did, and the panel/API is only reachable through it. (Roster
-//     re-verifies as defense in depth; adopting the same here is a
-//     recorded follow-up, not a design disagreement.)
+//   - people, whose token access-issuer signed: forwarded by the console's
+//     access-proxy, or presented directly by a CLI. The signature is
+//     VERIFIED against the issuer's keys, with access-roster's own
+//     identity package. Nothing here trusts a claim it has not checked,
+//     because "only the gateway can reach this" is one NetworkPolicy edit
+//     or one port-forward away from false.
 //
-// The chain tries TokenReview first when a reviewer is wired; a token
-// the cluster does not recognize falls through to claim parsing. A
-// FAILING reviewer (API server unreachable) fails authentication closed
-// rather than falling through to the weaker parse.
+// The chain tries TokenReview first when a reviewer is wired; a token the
+// cluster does not recognize goes to the issuer. A FAILING reviewer (API
+// server unreachable) fails authentication closed rather than falling
+// through, and a token neither authority vouches for is refused.
 package authn
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
+
+	"github.com/truvity/access-roster/identity"
 )
 
 // Method says which authority answered for the identity.
 const (
 	MethodTokenReview = "tokenreview"
-	MethodGatewayJWT  = "gateway-jwt"
+	MethodIssuer      = "issuer"
 )
 
 // ErrNoCredentials is returned when the request carries no bearer token.
@@ -43,19 +40,18 @@ var ErrNoCredentials = errors.New("authn: no bearer token presented")
 // Identity is who the caller is, as far as this service is concerned.
 type Identity struct {
 	// Subject is the username: "system:serviceaccount:<ns>:<name>" for a
-	// workload, the token's sub/email for a human.
+	// workload, the token's `sub` for a person (their address).
 	Subject string
 
 	// Email is the human's email; empty for workloads.
 	Email string
 
-	// Name is the human's display name (the OIDC "name" claim, via the
-	// token or userinfo); empty for workloads. Display only — nothing
-	// authorizes on it.
+	// Name is the person's display name, from the verified token; empty for
+	// workloads. Display only — nothing authorizes on it.
 	Name string
 
 	// Groups carries the caller's groups: token-review groups for a
-	// workload, the OIDC groups claim for a human.
+	// workload, the internal groups access-issuer put in a person's token.
 	Groups []string
 
 	// Method records which authority answered.
@@ -80,25 +76,27 @@ type TokenReviewer interface {
 	Review(ctx context.Context, token string) (Identity, bool, error)
 }
 
-// Authenticator resolves an Authorization header to an Identity.
-type Authenticator struct {
-	// Reviewer is the TokenReview client; nil skips straight to claim
-	// parsing (out-of-cluster development).
-	Reviewer TokenReviewer
-
-	// GroupsClaim names the OIDC claim carrying groups ("groups").
-	GroupsClaim string
-
-	// Enricher, when set, fills email and role-derived groups from the
-	// OIDC userinfo endpoint for identities that arrive bare (gateway
-	// sessions carry no email/role claims — the cookie-size ruling).
-	Enricher *UserinfoEnricher
+// Verifier checks a token access-issuer signed. *identity.Issuer satisfies
+// it; tests inject fakes.
+type Verifier interface {
+	Verify(ctx context.Context, token string) (identity.Verified, error)
 }
 
-// Authenticate implements the chain.
-func (a *Authenticator) Authenticate(ctx context.Context, authorization string) (Identity, error) {
-	token, ok := bearerToken(authorization)
-	if !ok {
+// Authenticator resolves a bearer token to an Identity.
+type Authenticator struct {
+	// Reviewer is the TokenReview client; nil skips it (out-of-cluster
+	// development).
+	Reviewer TokenReviewer
+
+	// Issuer verifies people's tokens; nil refuses every token the
+	// cluster does not vouch for.
+	Issuer Verifier
+}
+
+// Authenticate implements the chain. token is the bare credential, as
+// identity.TokenFrom reads it off a request.
+func (a *Authenticator) Authenticate(ctx context.Context, token string) (Identity, error) {
+	if token == "" {
 		return Identity{}, ErrNoCredentials
 	}
 
@@ -106,111 +104,29 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorization string) 
 		identity, authenticated, err := a.Reviewer.Review(ctx, token)
 		if err != nil {
 			// Fail closed: an unreachable authority is not a license to
-			// downgrade to the weaker parse.
+			// try a different one.
 			return Identity{}, fmt.Errorf("token review: %w", err)
 		}
 
 		if authenticated {
-			return a.enrich(ctx, token, identity), nil
+			return identity, nil
 		}
 	}
 
-	identity, err := identityFromJWT(token, a.GroupsClaim)
+	if a.Issuer == nil {
+		return Identity{}, errors.New("authn: the cluster does not know this token and no issuer is configured")
+	}
+
+	who, err := a.Issuer.Verify(ctx, token)
 	if err != nil {
-		return Identity{}, err
+		return Identity{}, fmt.Errorf("issuer: %w", err)
 	}
 
-	// The fallback branch is precisely where gateway sessions land:
-	// their tokens carry no email claim, so the CLUSTER's OIDC
-	// username mapping fails and TokenReview answers unauthenticated —
-	// enrichment wired only on the reviewed branch never fired
-	// (observed on devel 0.13.1: raw-ID panel, zero WARN lines).
-	return a.enrich(ctx, token, identity), nil
-}
-
-// enrich applies userinfo enrichment when configured and warranted.
-func (a *Authenticator) enrich(ctx context.Context, token string, identity Identity) Identity {
-	if a.Enricher == nil || !looksEnrichable(identity) {
-		return identity
-	}
-
-	return a.Enricher.Enrich(ctx, token, identity)
-}
-
-// bearerToken pulls the credential out of an Authorization header.
-func bearerToken(header string) (string, bool) {
-	const scheme = "Bearer "
-
-	if len(header) < len(scheme) || !strings.EqualFold(header[:len(scheme)], scheme) {
-		return "", false
-	}
-
-	value := strings.TrimSpace(header[len(scheme):])
-
-	return value, value != ""
-}
-
-// identityFromJWT reads the claims off a gateway-forwarded JWT. The
-// payload is decoded, not verified — see the package comment.
-func identityFromJWT(token, groupsClaim string) (Identity, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return Identity{}, errors.New("authn: token is not a JWT and the cluster does not know it")
-	}
-
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return Identity{}, fmt.Errorf("authn: decode JWT payload: %w", err)
-	}
-
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return Identity{}, fmt.Errorf("authn: parse JWT claims: %w", err)
-	}
-
-	identity := Identity{
-		Subject: stringClaim(claims, "sub"),
-		Email:   stringClaim(claims, "email"),
-		Name:    stringClaim(claims, "name"),
-		Groups:  stringsClaim(claims, groupsClaim),
-		Method:  MethodGatewayJWT,
-	}
-
-	if identity.Email != "" && identity.Subject == "" {
-		identity.Subject = identity.Email
-	}
-
-	if identity.Subject == "" && identity.Email == "" && len(identity.Groups) == 0 {
-		return Identity{}, errors.New("authn: token carries no identity claims")
-	}
-
-	return identity, nil
-}
-
-func stringClaim(claims map[string]any, name string) string {
-	value, _ := claims[name].(string)
-
-	return value
-}
-
-// stringsClaim normalizes the shapes a groups claim arrives in:
-// providers disagree about whether a single group is a string or a
-// one-element array.
-func stringsClaim(claims map[string]any, name string) []string {
-	switch value := claims[name].(type) {
-	case string:
-		return []string{value}
-	case []any:
-		out := make([]string, 0, len(value))
-
-		for _, item := range value {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-
-		return out
-	default:
-		return nil
-	}
+	return Identity{
+		Subject: who.Subject,
+		Email:   who.Email,
+		Name:    who.Name,
+		Groups:  who.Groups,
+		Method:  MethodIssuer,
+	}, nil
 }
