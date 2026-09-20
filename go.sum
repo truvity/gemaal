@@ -97,6 +97,8 @@ github.com/truvity/access-roster v1.9.0 h1:BNkQ//DsgVorQek70G+XCC4oaREfDnOAHHh6V
 github.com/truvity/access-roster v1.9.0/go.mod h1:lOZ5bt/+9S9FNUF24rJSWSr/8OwwTTAflvnW51MtVuI=
 github.com/truvity/access-roster v1.10.0 h1:Q2+zNAjT2dWd3hhqGg+9TW/VfzAxm95u6Ph/CIyU3vQ=
 github.com/truvity/access-roster v1.10.0/go.mod h1:lOZ5bt/+9S9FNUF24rJSWSr/8OwwTTAflvnW51MtVuI=
+github.com/truvity/access-roster v1.12.0 h1:+1N6k/wn0pLHgj8XwNilBOtooNt6sBLkXkXyF3gnhe8=
+github.com/truvity/access-roster v1.12.0/go.mod h1:8vs0dVukzwBUqFTn86i0ilqe1M5GCSgCEDfSMIaU5Eo=
 github.com/urfave/cli/v3 v3.11.0 h1:P/euJp99kb9p0tlVY+iYTLYYTAQlfl0hR2gUO1Img1Q=
 github.com/urfave/cli/v3 v3.11.0/go.mod h1:ysVLtOEmg2tOy6PknnYVhDoouyC/6N42TMeoMzskhso=
 github.com/zitadel/oidc/v3 v3.49.6 h1:FMoasVXsHK3xvA1bcDrjGsc5ppJ1MQ4eW51j4oj+584=
