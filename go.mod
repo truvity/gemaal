@@ -13,10 +13,10 @@ require (
 	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/gofrs/flock v0.13.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/access-roster v1.17.0
+	github.com/truvity/access-roster v1.27.1
 	github.com/urfave/cli/v3 v3.11.0
 	go.yaml.in/yaml/v3 v3.0.5
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -56,7 +56,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
