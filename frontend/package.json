@@ -15,7 +15,7 @@
     "@emotion/styled": "^11.13.0",
     "@mui/icons-material": "^9.0.0",
     "@mui/material": "^9.0.0",
-    "@truvity/access-roster": "^1.6.5",
+    "@truvity/access-roster": "^1.27.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
