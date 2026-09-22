@@ -46,7 +46,14 @@ export function App() {
             {TABS.map((k) => <Tab key={k} value={k} label={labels[k]} component="a" href={`#${k}`} sx={{ minHeight: 48 }} />)}
           </Tabs>
           <Box sx={{ ml: "auto" }}>
-            {me && <UserBadge identity={me} emphasize={["admin"]} signInHref="/oauth2/start" />}
+            {/* Signing in is a NAVIGATION, not an endpoint. oauth2-proxy
+                served `/oauth2/start`; the gateway's OIDC filter serves no
+                such path and 404s on it. What it does instead is gate every
+                request, so loading the console itself is what triggers the
+                redirect to the issuer when there is no session. Hence "/":
+                a full page load, which the XHR that discovered the session
+                was gone could not do for itself. */}
+            {me && <UserBadge identity={me} emphasize={["admin"]} signInHref="/" />}
           </Box>
         </Toolbar>
       </AppBar>
