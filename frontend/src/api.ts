@@ -152,9 +152,14 @@ export async function history(signal?: AbortSignal): Promise<SweepRow[]> {
   });
 }
 
-// The access-proxy's sign-out: oauth2-proxy's endpoint, which clears this
-// console's session and continues to the issuer.
-const signOutUrl = "/oauth2/sign_out";
+// Sign-out is the gateway's, not this service's: no route here serves it.
+// The path is the Envoy Gateway OIDC filter's `logoutPath`, which is this
+// console's client row proxy prefix (`/oauth2`) plus `/logout`. It was
+// oauth2-proxy's `/oauth2/sign_out` until the console moved off the
+// access-proxy onto the gateway's own OIDC filter; change it only if that
+// row's prefix changes, and there is no runtime channel to configure it —
+// the SPA is embedded in the binary and is served as static files.
+const signOutUrl = "/oauth2/logout";
 
 // fetchMe asks the service who the caller is, in access-roster's Identity
 // shape so the shared UserBadge renders it. The service stays the authority
