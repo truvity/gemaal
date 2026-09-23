@@ -145,16 +145,23 @@ func (p *Pipeline) publishKoImage(
 	}
 
 	// ko names the image from the repository and ONE of three strategies.
-	// They are mutually exclusive and goreleaser applies them in this
-	// order, so the image name computed here is the one ko will push to.
+	//
+	// THE ORDER IS KO'S, and it is not the order the fields are written
+	// in: preserve_import_paths, then base_import_paths, then bare
+	// (ko's options.MakeNamer). It matters because the estate's configs
+	// set `bare: true` AND `base_import_paths: true` on the same entry,
+	// and ko resolves that to base_import_paths. Reading `bare` first
+	// names the image after the repository's PARENT — which a registry
+	// answers with a 403, since the role may push to `dms/wallet` and
+	// not to `dms`.
 	image := repo
 
 	switch {
-	case k.Bare:
-	case k.BaseImportPaths:
-		image = repo + "/" + path.Base(strings.TrimSuffix(main, "/"))
 	case k.PreserveImportPaths:
 		image = repo + "/" + strings.TrimPrefix(strings.TrimPrefix(main, "."), "/")
+	case k.BaseImportPaths:
+		image = repo + "/" + path.Base(strings.TrimSuffix(main, "/"))
+	case k.Bare:
 	default:
 		image = repo + "/" + path.Base(strings.TrimSuffix(main, "/"))
 	}
@@ -181,13 +188,16 @@ func (p *Pipeline) publishKoImage(
 		"--image-refs", refsPath,
 	}
 
+	// Exactly ONE naming flag, chosen with ko's precedence above. Passing
+	// two would leave the choice to ko and make the name computed here a
+	// guess about which one it picks.
 	switch {
-	case k.Bare:
-		args = append(args, "--bare")
-	case k.BaseImportPaths:
-		args = append(args, "--base-import-paths")
 	case k.PreserveImportPaths:
 		args = append(args, "--preserve-import-paths")
+	case k.BaseImportPaths:
+		args = append(args, "--base-import-paths")
+	case k.Bare:
+		args = append(args, "--bare")
 	}
 
 	if k.SBOM != "" {

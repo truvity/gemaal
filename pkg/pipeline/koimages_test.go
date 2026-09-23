@@ -29,7 +29,12 @@ kos:
     build: url-shortener-redirect
     tags: ["{{ .Version }}", "{{ if and (not .IsSnapshot) (not .IsNightly) }}latest{{ end }}"]
     platforms: [linux/amd64, linux/arm64]
+    # BOTH, which is what every config in this estate writes. ko resolves
+    # it to base_import_paths; a reader taking bare first would name the
+    # image after the repository's parent.
     bare: true
+    preserve_import_paths: false
+    base_import_paths: true
     base_image: gcr.io/distroless/static:nonroot
     sbom: none
     labels:
@@ -87,7 +92,8 @@ func TestPublishKoImagesStable(t *testing.T) {
 
 	img := images[0]
 	assert.Equal(t, "url-shortener-redirect", img.ID)
-	assert.Equal(t, "reg/url-shortener", img.Image, "bare: the repository verbatim, no component suffix")
+	assert.Equal(t, "reg/url-shortener/redirect", img.Image,
+		"base_import_paths wins over bare, which is ko's own precedence")
 	assert.Equal(t, []string{"1.2.3", "latest"}, img.Tags)
 	assert.Equal(t, "sha256:aaa", img.Digest)
 
@@ -96,7 +102,8 @@ func TestPublishKoImagesStable(t *testing.T) {
 	assert.Contains(t, argv, "--push")
 	assert.Contains(t, argv, "--platform linux/amd64,linux/arm64")
 	assert.Contains(t, argv, "--tags 1.2.3,latest")
-	assert.Contains(t, argv, "--bare")
+	assert.Contains(t, argv, "--base-import-paths")
+	assert.NotContains(t, argv, "--bare", "exactly one naming flag, or ko makes the choice instead")
 	assert.Contains(t, argv, "--sbom none")
 	assert.Contains(t, argv, "./cmd/url-shortener/redirect")
 
@@ -158,12 +165,12 @@ func TestPublishKoImagesWritesArtifacts(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal(raw, &artifacts))
 	require.Len(t, artifacts, 2)
-	assert.Equal(t, "reg/url-shortener:1.2.3", artifacts[0].Name)
+	assert.Equal(t, "reg/url-shortener/redirect:1.2.3", artifacts[0].Name)
 	assert.Equal(t, "Docker Image", artifacts[0].Type)
 	assert.Equal(t, "sha256:ccc", artifacts[0].Extra.Digest)
 	assert.Equal(t, "url-shortener-redirect", artifacts[0].Extra.ID)
 	assert.Equal(t, []string{"linux/amd64", "linux/arm64"}, artifacts[0].Extra.Platforms)
-	assert.Equal(t, "reg/url-shortener:latest", artifacts[1].Name)
+	assert.Equal(t, "reg/url-shortener/redirect:latest", artifacts[1].Name)
 }
 
 // A ko entry naming a build the config does not declare would otherwise
@@ -216,9 +223,10 @@ func TestPublishKoImagesRefusesWhenKoPushedNothing(t *testing.T) {
 	require.ErrorContains(t, err, "pushed nothing")
 }
 
-// base_import_paths appends the main package's own name, which is the
-// naming most of the estate's Go images use.
-func TestPublishKoImagesBaseImportPaths(t *testing.T) {
+// bare ALONE is the repository verbatim, with no component suffix. This
+// is the other half of the precedence: with base_import_paths off, bare
+// is what names the image.
+func TestPublishKoImagesBareAlone(t *testing.T) {
 	p, s, root, _ := newTestPipeline(t)
 	require.NoError(t, p.resolveRoot(context.Background()))
 	seedKoProject(t, root, "1.2.3")
@@ -228,10 +236,32 @@ func TestPublishKoImagesBaseImportPaths(t *testing.T) {
 	raw, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(cfgPath,
-		[]byte(strings.Replace(string(raw), "bare: true", "base_import_paths: true", 1)), 0o644))
+		[]byte(strings.Replace(string(raw), "base_import_paths: true", "base_import_paths: false", 1)), 0o644))
 
 	images, err := p.publishKoImages(context.Background(), []string{"KO_DOCKER_REPO=reg/url-shortener"}, false)
 	require.NoError(t, err)
-	assert.Equal(t, "reg/url-shortener/redirect", images[0].Image)
-	assert.Contains(t, strings.Join(s.call(t, "ko build").Argv, " "), "--base-import-paths")
+	assert.Equal(t, "reg/url-shortener", images[0].Image)
+
+	argv := strings.Join(s.call(t, "ko build").Argv, " ")
+	assert.Contains(t, argv, "--bare")
+	assert.NotContains(t, argv, "--base-import-paths")
+}
+
+// preserve_import_paths beats both, which is the top of ko's precedence.
+func TestPublishKoImagesPreserveImportPathsWinsOverBoth(t *testing.T) {
+	p, s, root, _ := newTestPipeline(t)
+	require.NoError(t, p.resolveRoot(context.Background()))
+	seedKoProject(t, root, "1.2.3")
+	stubKoPublish(s, "sha256:999")
+
+	cfgPath := filepath.Join(root, "url-shortener", ".goreleaser.yaml")
+	raw, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfgPath,
+		[]byte(strings.Replace(string(raw), "preserve_import_paths: false", "preserve_import_paths: true", 1)), 0o644))
+
+	images, err := p.publishKoImages(context.Background(), []string{"KO_DOCKER_REPO=reg/url-shortener"}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "reg/url-shortener/cmd/url-shortener/redirect", images[0].Image)
+	assert.Contains(t, strings.Join(s.call(t, "ko build").Argv, " "), "--preserve-import-paths")
 }
