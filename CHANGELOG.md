@@ -4,6 +4,15 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.23.x
+- **0.23.1** — the ko image name follows KO'S precedence, which is
+  `preserve_import_paths`, then `base_import_paths`, then `bare` — not
+  the order the fields appear in. Every config in this estate sets
+  `bare: true` AND `base_import_paths: true` on the same entry, and ko
+  resolves that to `base_import_paths`. 0.23.0 read `bare` first and
+  named the image after the repository's PARENT, which a registry
+  answers with 403 Forbidden: the release role may push to `dms/wallet`
+  and not to `dms`. Exactly one naming flag is passed now, so the name
+  computed here is not a guess about which one ko would pick.
 - **0.23.0** — goreleaser-pro leaves the pipeline. The dev loop ran
   `goreleaser release --nightly`, which is Pro-only and bought two
   things: a build from a dirty tree, now `--skip=validate` on the OSS
