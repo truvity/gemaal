@@ -22,7 +22,9 @@ type goreleaserConfig struct {
 	Monorepo struct {
 		Dir string `yaml:"dir"`
 	} `yaml:"monorepo"`
-	DockersV2 []dockerV2 `yaml:"dockers_v2"`
+	DockersV2 []dockerV2        `yaml:"dockers_v2"`
+	Kos       []koEntry         `yaml:"kos"`
+	Builds    []goreleaserBuild `yaml:"builds"`
 }
 
 // dockerV2 mirrors one dockers_v2 entry. The field set is goreleaser's
@@ -119,7 +121,16 @@ type templateData struct {
 	Env         map[string]string
 }
 
-func newTemplateData(meta *goreleaserMetadata, nightly bool, env []string) templateData {
+// newTemplateData mirrors the context goreleaser renders templates with,
+// so that a name computed here and a name computed by goreleaser on a
+// laptop are the same name.
+//
+// `snapshot` says which of the two builds this is. It sets IsSnapshot and
+// leaves IsNightly false, because that is what `goreleaser --snapshot`
+// itself sets: the dev loop moved off the Pro-only `--nightly` and the
+// context has to move with it, or a config that suppresses a `latest` tag
+// on a dev build would stop suppressing it.
+func newTemplateData(meta *goreleaserMetadata, snapshot bool, env []string) templateData {
 	m := make(map[string]string, len(env))
 	for _, kv := range env {
 		k, v, ok := strings.Cut(kv, "=")
@@ -140,7 +151,7 @@ func newTemplateData(meta *goreleaserMetadata, nightly bool, env []string) templ
 		Commit:      meta.Commit,
 		ShortCommit: short,
 		Date:        meta.Date,
-		IsNightly:   nightly,
+		IsSnapshot:  snapshot,
 		Env:         m,
 	}
 }
@@ -200,4 +211,40 @@ func (c *goreleaserConfig) projectDir(root string) string {
 	}
 
 	return filepath.Join(root, filepath.FromSlash(path.Clean(c.Monorepo.Dir)))
+}
+
+// koEntry mirrors one `kos` entry of .goreleaser.yaml. The field set is
+// goreleaser's (https://goreleaser.com/customization/ko/); the semantics
+// publishKoImages reproduces are documented there.
+type koEntry struct {
+	ID                  string            `yaml:"id"`
+	Build               string            `yaml:"build"`
+	Main                string            `yaml:"main"`
+	WorkingDir          string            `yaml:"working_dir"`
+	Repositories        []string          `yaml:"repositories"`
+	Tags                []string          `yaml:"tags"`
+	Platforms           []string          `yaml:"platforms"`
+	Bare                bool              `yaml:"bare"`
+	PreserveImportPaths bool              `yaml:"preserve_import_paths"`
+	BaseImportPaths     bool              `yaml:"base_import_paths"`
+	BaseImage           string            `yaml:"base_image"`
+	SBOM                string            `yaml:"sbom"`
+	Labels              map[string]string `yaml:"labels"`
+	Annotations         map[string]string `yaml:"annotations"`
+	Env                 []string          `yaml:"env"`
+	Flags               []string          `yaml:"flags"`
+	Ldflags             []string          `yaml:"ldflags"`
+	Disable             string            `yaml:"disable"`
+}
+
+// goreleaserBuild is the slice of a `builds` entry a ko entry inherits
+// when it names one with `build:`. goreleaser resolves main, flags,
+// ldflags and env that way, and so does this.
+type goreleaserBuild struct {
+	ID      string   `yaml:"id"`
+	Main    string   `yaml:"main"`
+	Dir     string   `yaml:"dir"`
+	Flags   []string `yaml:"flags"`
+	Ldflags []string `yaml:"ldflags"`
+	Env     []string `yaml:"env"`
 }

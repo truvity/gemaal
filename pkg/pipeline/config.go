@@ -147,6 +147,10 @@ type Commands struct {
 	// Docker drives the dockers_v2 image builds (buildx) that this
 	// pipeline runs INSTEAD of goreleaser — see publishImages for why.
 	Docker []string `yaml:"docker"`
+	// Ko drives the `kos` image builds that this pipeline runs INSTEAD of
+	// goreleaser — see publishKoImages for why. goreleaser OSS can build
+	// them but not publish them, and publishing is the point.
+	Ko []string `yaml:"ko"`
 	// PreBuild commands run by release-stable ONLY, after the five gates
 	// pass and before goreleaser (gates that run after a build are not
 	// gates). The snapshot flow runs none: its caller's task deps are
@@ -295,6 +299,10 @@ func (c *Config) applyDefaults() {
 
 	if len(c.Commands.Docker) == 0 {
 		c.Commands.Docker = []string{"docker"}
+	}
+
+	if len(c.Commands.Ko) == 0 {
+		c.Commands.Ko = []string{"ko"}
 	}
 
 	if c.Lock.File == "" {
