@@ -103,6 +103,16 @@ func (p *Pipeline) run(ctx context.Context, env, base []string, args ...string) 
 	return p.runner.Run(ctx, Command{Argv: argv, Dir: p.root, Env: env})
 }
 
+// runIn is run with a working directory of its own. Every other step
+// runs from the git root; ko compiles a Go package, so it runs where that
+// package's module is.
+func (p *Pipeline) runIn(ctx context.Context, dir string, env, base []string, args ...string) error {
+	argv := make([]string, 0, len(base)+len(args))
+	argv = append(append(argv, base...), args...)
+
+	return p.runner.Run(ctx, Command{Argv: argv, Dir: dir, Env: env})
+}
+
 func (p *Pipeline) output(ctx context.Context, env, base []string, args ...string) (string, error) {
 	argv := make([]string, 0, len(base)+len(args))
 	argv = append(append(argv, base...), args...)

@@ -21,15 +21,24 @@ import (
 //  0. drop the previous run's packaged charts + .release-type stamp,
 //     before anything can fail — a half-finished build must leave
 //     nothing a push flow would publish;
-//  1. goreleaser --nightly from the git root. DIRTY-TREE SUPPORT
-//     (verified against goreleaser-pro v2.17.0 in the spec scripts): the
-//     git dirty-state check lives in goreleaser's validate step, and
-//     --nightly implies --skip=announce,validate — so nightly builds
-//     accept a dirty tree while still PUBLISHING images. --snapshot can
-//     NOT substitute: it implies --skip=publish, which would leave the
-//     digest-pinned charts referencing images that were never pushed;
+//
+//  1. goreleaser --snapshot from the git root, on the OSS build.
+//     DIRTY-TREE SUPPORT: the git dirty-state check lives in
+//     goreleaser's validate step, so --skip=validate is what accepts an
+//     uncommitted tree — the Pro-only --nightly implied it, and that is
+//     one of the two things it was here for.
+//
+//     The other was publishing. --snapshot implies --skip=publish, so
+//     goreleaser builds the images and pushes nothing, which alone would
+//     leave the digest-pinned charts referencing images that never
+//     reached a registry. Both image kinds are therefore pushed by this
+//     pipeline: dockers_v2 by publishImages, kos by publishKoImages.
+//     With those two, nothing Pro-only is left in the flow;
+//
 //  2. helmctl goreleaser-manifest — digest-pinned release manifest;
+//
 //  3. helmctl package for every chart the tag produces;
+//
 //  4. a `preview` .release-type stamp next to the packaged charts, so
 //     the preview push can refuse charts built for the other registry.
 //
@@ -67,16 +76,23 @@ func (p *Pipeline) Snapshot(ctx context.Context) error {
 	}
 
 	// 1. Images. goreleaser runs from the git root (monorepo tag_prefix,
-	// per-project dist). Nightly: publishes from a dirty tree. dockers_v2
-	// is skipped here and driven by publishImages — same config, but
-	// pushed by digest and tagged once (the shape an immutable registry
-	// needs; the preview registry gets it for parity).
+	// per-project dist) and builds only: --skip=validate accepts the
+	// dirty tree, and both image kinds are skipped here and pushed
+	// below. dockers_v2 goes by digest and is tagged once (the shape an
+	// immutable registry needs; the preview registry gets it for
+	// parity), and kos is pushed by ko itself, which writes one index
+	// under one tag.
 	if err := p.run(ctx, env, p.cfg.Commands.Goreleaser,
-		"release", "--nightly", "--clean", "--skip=docker", "-f", p.cfg.GoreleaserConfig); err != nil {
+		"release", "--snapshot", "--clean", "--skip=validate,docker,ko",
+		"-f", p.cfg.GoreleaserConfig); err != nil {
 		return err
 	}
 
 	if _, err := p.publishImages(ctx, env, true); err != nil {
+		return err
+	}
+
+	if _, err := p.publishKoImages(ctx, env, true); err != nil {
 		return err
 	}
 

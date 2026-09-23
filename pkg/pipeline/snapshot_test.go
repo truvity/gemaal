@@ -52,7 +52,7 @@ func TestSnapshotHappyPath(t *testing.T) {
 	// vouches for it.
 	seedCharts(t, root, p.cfg, "0.0.9", StampStable)
 
-	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly --clean --skip=docker -f url-shortener/.goreleaser.yaml", "1.2.3")
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --snapshot --clean --skip=validate,docker,ko -f url-shortener/.goreleaser.yaml", "1.2.3")
 
 	require.NoError(t, p.Snapshot(context.Background()))
 
@@ -65,13 +65,15 @@ func TestSnapshotHappyPath(t *testing.T) {
 			" oci://preview.example.com/url-shortener/charts")
 	}
 
-	// The build is nightly (dirty-capable, still publishing) — never the
-	// full-validation invocation.
-	require.True(t, s.called("goreleaser release --nightly"))
+	// The dev loop builds with --snapshot and skips validation, which is
+	// what accepts a dirty tree now that the Pro-only --nightly is gone.
+	// It is never the full-validation invocation the stable release uses.
+	require.True(t, s.called("goreleaser release --snapshot --clean --skip=validate,docker,ko"))
+	require.False(t, s.called("goreleaser release --nightly"))
 
 	// Ordering is load-bearing: images, then manifest, then vendoring,
 	// then ring2, then ring3.
-	gorel := s.find("goreleaser release --nightly")
+	gorel := s.find("goreleaser release --snapshot")
 	manifest := s.find("go tool helmctl goreleaser-manifest")
 	depUpdate := s.find("helm dependency update url-shortener/charts/url-shortener-infra")
 	ring2 := s.find("go tool helmctl package --chart url-shortener/charts/url-shortener-infra")
@@ -88,7 +90,7 @@ func TestSnapshotHappyPath(t *testing.T) {
 
 	// The whole workflow is preview-wired: registry + profile from the
 	// preview pair, KO_DOCKER_REPO derived from it.
-	env := s.call(t, "goreleaser release --nightly").Env
+	env := s.call(t, "goreleaser release --snapshot").Env
 	assert.Contains(t, env, "REGISTRY=preview.example.com")
 	assert.Contains(t, env, "AWS_PROFILE=preview@power")
 	assert.Contains(t, env, "AWS_REGION=eu-central-1")
@@ -118,7 +120,7 @@ func TestSnapshotCleansBeforeBuild(t *testing.T) {
 
 	seedCharts(t, root, p.cfg, "0.0.9", StampPreview)
 
-	s.on("goreleaser release --nightly", stubResult{err: errors.New("boom")})
+	s.on("goreleaser release --snapshot", stubResult{err: errors.New("boom")})
 
 	require.Error(t, p.Snapshot(context.Background()))
 
@@ -171,7 +173,7 @@ func TestSnapshotPackagesExtraCharts(t *testing.T) {
 	p, s, root, _ := newExtraTestPipeline(t)
 	chartsOut := filepath.Join(root, "dist", "url-shortener", "charts")
 
-	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly", "1.2.3")
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --snapshot", "1.2.3")
 
 	require.NoError(t, p.Snapshot(context.Background()))
 
@@ -192,7 +194,7 @@ func TestSnapshotPackagesExtraCharts(t *testing.T) {
 func TestSnapshotWithoutExtraChartsIsUnchanged(t *testing.T) {
 	p, s, root, _ := newTestPipeline(t)
 
-	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --nightly", "1.2.3")
+	stubBuildEffects(t, s, root, p.cfg, "goreleaser release --snapshot", "1.2.3")
 
 	require.NoError(t, p.Snapshot(context.Background()))
 

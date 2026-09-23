@@ -144,13 +144,17 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	st.goreleaserStarted = true
 
 	if err := p.run(ctx, env, p.cfg.Commands.Goreleaser,
-		"release", "--clean", "--skip=docker", "-f", p.cfg.GoreleaserConfig); err != nil {
+		"release", "--clean", "--skip=docker,ko", "-f", p.cfg.GoreleaserConfig); err != nil {
 		return err
 	}
 
 	// dockers_v2 images, by this pipeline: every platform pushed by
 	// digest first (no tag can burn), then one tag write per image.
 	if _, err := p.publishImages(ctx, env, false); err != nil {
+		return err
+	}
+
+	if _, err := p.publishKoImages(ctx, env, false); err != nil {
 		return err
 	}
 

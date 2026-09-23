@@ -58,7 +58,7 @@ import (
 // (goreleaser's, untouched by this step) or a Node bundle via
 // extra_files — and an entry that asks for them is refused loudly rather
 // than built wrong.
-func (p *Pipeline) publishImages(ctx context.Context, env []string, nightly bool) ([]publishedImage, error) {
+func (p *Pipeline) publishImages(ctx context.Context, env []string, snapshot bool) ([]publishedImage, error) {
 	gcfg, err := loadGoreleaserConfig(p.abs(p.cfg.GoreleaserConfig))
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func (p *Pipeline) publishImages(ctx context.Context, env []string, nightly bool
 		return nil, err
 	}
 
-	data := newTemplateData(meta, nightly, append(os.Environ(), env...))
+	data := newTemplateData(meta, snapshot, append(os.Environ(), env...))
 	projectDir := gcfg.projectDir(p.root)
 
 	// Phase 1: every platform of every image, by digest.
