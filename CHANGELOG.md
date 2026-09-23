@@ -3,6 +3,20 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.23.x
+- **0.23.0** — goreleaser-pro leaves the pipeline. The dev loop ran
+  `goreleaser release --nightly`, which is Pro-only and bought two
+  things: a build from a dirty tree, now `--skip=validate` on the OSS
+  build, and a ko publish. `--snapshot` implies `--skip=publish`, so
+  goreleaser builds the ko images and pushes nothing — `publishKoImages`
+  is the push, in the same shape `publishImages` already gives the
+  `dockers_v2` images, and `commands.ko` is the new tool (default `ko`).
+  A consumer must therefore carry `ko` in its toolchain, and may drop
+  goreleaser-pro and its licence. `templateData.IsSnapshot` is now SET
+  on the dev loop and `IsNightly` left false, matching what goreleaser
+  computes under `--snapshot`: a config suppressing `latest` with
+  `and (not .IsSnapshot) (not .IsNightly)` keeps suppressing it.
+
 ## 0.18.x
 - **0.18.0** — the pipeline config packages more than a ring pair
   (`charts.extra`). Ring2/ring3 are an INSTALL-ORDERING relationship,
