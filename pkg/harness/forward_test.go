@@ -3,6 +3,9 @@ package harness
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -12,35 +15,26 @@ import (
 )
 
 // fakeForwardProcess is forwardProcess scripted for tests — the
-// port-forward equivalent of stubRunner: an ordered line queue, an
-// optional terminal error, and a close flag tests assert on. A queue
-// that runs out with no terminal error blocks (like a real still-running
-// process would) until the test's own timeout fires.
+// port-forward equivalent of stubRunner. Ready returns the configured
+// result immediately when one is set, or blocks until ctx is done
+// (simulating a still-starting or wedged process) when none is.
 type fakeForwardProcess struct {
+	port      string
+	err       error
+	hasResult bool
+
 	mu     sync.Mutex
-	lines  []string
-	err    error
 	closed bool
 }
 
-func (f *fakeForwardProcess) Line() (string, error) {
-	f.mu.Lock()
-	if len(f.lines) > 0 {
-		l := f.lines[0]
-		f.lines = f.lines[1:]
-		f.mu.Unlock()
-
-		return l, nil
+func (f *fakeForwardProcess) Ready(ctx context.Context) (string, error) {
+	if f.hasResult {
+		return f.port, f.err
 	}
 
-	err := f.err
-	f.mu.Unlock()
+	<-ctx.Done()
 
-	if err != nil {
-		return "", err
-	}
-
-	select {} // still running: never returns on its own
+	return "", ctx.Err()
 }
 
 func (f *fakeForwardProcess) Close() error {
@@ -82,49 +76,290 @@ func TestParseForwardingLine(t *testing.T) {
 	}
 }
 
-func TestWaitForForwardReady(t *testing.T) {
-	t.Run("returns the port once the Forwarding line appears", func(t *testing.T) {
-		proc := &fakeForwardProcess{lines: []string{"Forwarding from 127.0.0.1:54321 -> 8080"}}
+// TestDrainForwardOutputUnderConnectionSpam is the regression for the
+// stall defect: kubectl prints one "Handling connection for …" line per
+// request, from inside the connection handler, for the WHOLE life of
+// the forward. A drain that stops reading after readiness lets that
+// stream fill the pipe (~64 KiB) and wedge kubectl — which reads as a
+// service hang mid-suite after a couple of thousand requests. Feeding
+// tens of thousands of such lines through a real io.Pipe with no
+// synchronization beyond the pipe itself proves the writer never blocks
+// (bounded time) and the reader goroutine exits (no leak) once the pipe
+// closes.
+func TestDrainForwardOutputUnderConnectionSpam(t *testing.T) {
+	pr, pw := io.Pipe()
 
-		port, err := waitForForwardReady(proc, time.Second)
+	ready := make(chan forwardReady, 1)
+
+	var waited int
+	wait := func() error { waited++; return nil }
+
+	drainDone := make(chan struct{})
+
+	go func() {
+		defer close(drainDone)
+		drainForwardOutput(pr, ready, wait)
+	}()
+
+	const spamLines = 50000
+
+	writeDone := make(chan struct{})
+
+	go func() {
+		defer close(writeDone)
+
+		_, _ = fmt.Fprintln(pw, "Forwarding from 127.0.0.1:54321 -> 8080")
+
+		for i := 0; i < spamLines; i++ {
+			_, _ = fmt.Fprintln(pw, "Handling connection for 8080")
+		}
+
+		_ = pw.Close()
+	}()
+
+	select {
+	case r := <-ready:
+		require.NoError(t, r.err)
+		assert.Equal(t, "54321", r.port)
+	case <-time.After(5 * time.Second):
+		t.Fatal("readiness was never delivered")
+	}
+
+	select {
+	case <-writeDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the producer blocked — the drain stalled under connection-line volume after readiness")
+	}
+
+	select {
+	case <-drainDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drain goroutine leaked after the pipe closed")
+	}
+
+	assert.Equal(t, 1, waited, "wait must be called exactly once, after every read completed")
+}
+
+func TestDrainForwardOutputProcessEndsBeforeReadiness(t *testing.T) {
+	pr, pw := io.Pipe()
+	ready := make(chan forwardReady, 1)
+	wait := func() error { return errors.New("exit status 1") }
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		drainForwardOutput(pr, ready, wait)
+	}()
+
+	_, _ = fmt.Fprintln(pw, "error: unable to forward port because pod is not running")
+	_ = pw.Close()
+
+	select {
+	case r := <-ready:
+		require.Error(t, r.err)
+		assert.Contains(t, r.err.Error(), "before announcing readiness")
+	case <-time.After(2 * time.Second):
+		t.Fatal("no result delivered")
+	}
+
+	<-done
+}
+
+// TestExecForwardStartRealSubprocessDrainsAndClosesCleanly exercises the
+// REAL execForwardStart — real exec.CommandContext, StdoutPipe, Kill and
+// Wait — against a harmless bash subprocess standing in for kubectl (no
+// cluster, no kubectl needed): it prints the Forwarding line, then a
+// connection-spam volume well past a 64 KiB pipe's capacity, then
+// sleeps. Under the old buffered-channel drain this reliably deadlocks
+// (the scanner goroutine blocks on the full channel, the pipe fills,
+// bash blocks writing, cmd.Wait() is never reached) — so a Close that
+// returns promptly here is the real proof the fix works, not just the
+// io.Pipe-level unit tests above.
+func TestExecForwardStartRealSubprocessDrainsAndClosesCleanly(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not on PATH")
+	}
+
+	script := `echo "Forwarding from 127.0.0.1:19999 -> 80"
+for i in $(seq 1 20000); do echo "Handling connection for 80"; done
+sleep 30`
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	proc, err := execForwardStart(ctx, []string{"bash", "-c", script})
+	require.NoError(t, err)
+
+	readyCtx, readyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer readyCancel()
+
+	port, err := proc.Ready(readyCtx)
+	require.NoError(t, err)
+	assert.Equal(t, "19999", port)
+
+	// Give the spam loop a moment to actually run past the pipe's
+	// buffer size; Close below is the real proof either way.
+	time.Sleep(200 * time.Millisecond)
+
+	closeDone := make(chan struct{})
+
+	go func() {
+		_ = proc.Close()
+		close(closeDone)
+	}()
+
+	select {
+	case <-closeDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return — the drain goroutine likely stalled on a filled pipe")
+	}
+}
+
+func TestServiceURLKindTierDoesNotDieWithTheCallersContext(t *testing.T) {
+	// The defect this guards: exec.CommandContext(ctx, …) tied the
+	// subprocess to ServiceURL's own ctx. On the shared tier the
+	// returned URL is just an IP and outlives a cancel(); the kind
+	// tier's forward must do the same — the call site is supposed to be
+	// IDENTICAL across tiers.
+	s := &stubRunner{}
+	s.on("kubectl get endpoints", `{"subsets":[{"addresses":[{"targetRef":{"name":"pod-x"}}],"ports":[{"port":8080}]}]}`, nil)
+
+	fake := &fakeForwardProcess{port: "54321", hasResult: true}
+
+	var startedCtx context.Context
+
+	c := &Cluster{Tier: TierKind, Runner: s, forwardStart: func(ctx context.Context, _ []string) (forwardProcess, error) {
+		startedCtx = ctx
+
+		return fake, nil
+	}}
+
+	callerCtx, cancel := context.WithCancel(context.Background())
+
+	url, err := c.ServiceURL(callerCtx, "ns", "svc", 8080)
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:54321", url)
+
+	cancel() // the caller is done with its own ctx right after the call returns
+
+	require.NotNil(t, startedCtx)
+	assert.NoError(t, startedCtx.Err(), "the forward's own context must not be cancelled by the caller's ctx")
+}
+
+func TestServiceURLKindTierReadinessRespectsCallerCancellation(t *testing.T) {
+	// The other half of the same fix: ctx must still bound the
+	// READINESS wait, even though the process itself runs detached.
+	s := &stubRunner{}
+	s.on("kubectl get endpoints", `{"subsets":[{"addresses":[{"targetRef":{"name":"pod-x"}}],"ports":[{"port":8080}]}]}`, nil)
+
+	fake := &fakeForwardProcess{} // never ready — Ready blocks on ctx.Done()
+
+	c := &Cluster{Tier: TierKind, Runner: s, ForwardReadyTimeout: time.Minute,
+		forwardStart: func(context.Context, []string) (forwardProcess, error) { return fake, nil }}
+
+	callerCtx, cancel := context.WithCancel(context.Background())
+	cancel() // already done before the call
+
+	_, err := c.ServiceURL(callerCtx, "ns", "svc", 8080)
+	require.Error(t, err, "a caller whose ctx is already done must not wait the full readiness timeout")
+	assert.True(t, fake.isClosed())
+}
+
+func TestResolveForwardTarget(t *testing.T) {
+	t.Run("single unnamed port: no service lookup needed", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints myapp-web -n ns",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-web-abcde"}}],"ports":[{"port":9090}]}]}`, nil)
+
+		c := &Cluster{Runner: s}
+
+		target, err := c.resolveForwardTarget(context.Background(), "ns", "myapp-web", 80)
 		require.NoError(t, err)
-		assert.Equal(t, "54321", port)
+		assert.Equal(t, "myapp-web-abcde", target.pod)
+		assert.Equal(t, 9090, target.port, "the SERVICE port (80) must never be used when targetPort differs")
+
+		for _, call := range s.joined() {
+			assert.NotContains(t, call, "get svc", "a single-port endpoint needs no name correlation")
+		}
 	})
 
-	t.Run("skips noise lines before the readiness line", func(t *testing.T) {
-		proc := &fakeForwardProcess{lines: []string{
-			"Handling connection for 8080",
-			"Forwarding from 127.0.0.1:9999 -> 8080",
-		}}
+	t.Run("single port with a named targetPort resolves to the endpoint's own number", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"echo-abc"}}],"ports":[{"name":"http","port":8080}]}]}`, nil)
 
-		port, err := waitForForwardReady(proc, time.Second)
+		c := &Cluster{Runner: s}
+
+		target, err := c.resolveForwardTarget(context.Background(), "ns", "echo", 8080)
 		require.NoError(t, err)
-		assert.Equal(t, "9999", port)
+		assert.Equal(t, 8080, target.port)
 	})
 
-	t.Run("a process error surfaces before any readiness line", func(t *testing.T) {
-		proc := &fakeForwardProcess{err: errors.New("kubectl: pod not found")}
+	t.Run("multi-port service correlates by port NAME", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints myapp -n ns",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-abc"}}],`+
+				`"ports":[{"name":"web","port":8080},{"name":"tls","port":8443}]}]}`, nil)
+		s.on("kubectl get svc myapp -n ns",
+			`{"spec":{"ports":[{"name":"web","port":80},{"name":"tls","port":443}]}}`, nil)
 
-		_, err := waitForForwardReady(proc, time.Second)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "pod not found")
+		c := &Cluster{Runner: s}
+
+		target, err := c.resolveForwardTarget(context.Background(), "ns", "myapp", 443)
+		require.NoError(t, err)
+		assert.Equal(t, "myapp-abc", target.pod)
+		assert.Equal(t, 8443, target.port, "port 443 (name tls) must resolve to the tls endpoint port, not web's")
 	})
 
-	t.Run("a still-running process with no readiness line times out", func(t *testing.T) {
-		proc := &fakeForwardProcess{}
+	t.Run("multi-port service: the other port also resolves correctly", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-abc"}}],`+
+				`"ports":[{"name":"web","port":8080},{"name":"tls","port":8443}]}]}`, nil)
+		s.on("kubectl get svc",
+			`{"spec":{"ports":[{"name":"web","port":80},{"name":"tls","port":443}]}}`, nil)
 
-		_, err := waitForForwardReady(proc, 20*time.Millisecond)
+		c := &Cluster{Runner: s}
+
+		target, err := c.resolveForwardTarget(context.Background(), "ns", "myapp", 80)
+		require.NoError(t, err)
+		assert.Equal(t, 8080, target.port)
+	})
+
+	t.Run("no ready endpoint refuses", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints", `{"subsets":[]}`, nil)
+
+		c := &Cluster{Runner: s}
+
+		_, err := c.resolveForwardTarget(context.Background(), "ns", "myapp", 80)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "timed out")
+		assert.Contains(t, err.Error(), "no ready endpoint")
+	})
+
+	t.Run("a service port absent from the spec refuses by name", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-abc"}}],`+
+				`"ports":[{"name":"web","port":8080},{"name":"tls","port":8443}]}]}`, nil)
+		s.on("kubectl get svc", `{"spec":{"ports":[{"name":"web","port":80},{"name":"tls","port":443}]}}`, nil)
+
+		c := &Cluster{Runner: s}
+
+		_, err := c.resolveForwardTarget(context.Background(), "ns", "myapp", 9999)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no port 9999")
 	})
 }
 
 func TestServiceURLKindTier(t *testing.T) {
 	t.Run("opens a forward straight to the endpoint pod and returns the local URL", func(t *testing.T) {
 		s := &stubRunner{}
-		s.on("kubectl --context kind-mycluster get endpoints myapp-web -n ci-kind-suite", "myapp-web-7d4f9-abcde\n", nil)
+		s.on("kubectl --context kind-mycluster get endpoints myapp-web -n ci-kind-suite",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-web-7d4f9-abcde"}}],"ports":[{"port":8080}]}]}`, nil)
 
-		fake := &fakeForwardProcess{lines: []string{"Forwarding from 127.0.0.1:54321 -> 8080"}}
+		fake := &fakeForwardProcess{port: "54321", hasResult: true}
 
 		var startedArgv []string
 
@@ -159,9 +394,30 @@ func TestServiceURLKindTier(t *testing.T) {
 		assert.False(t, ok, "a closed forward is forgotten")
 	})
 
+	t.Run("the remote side of the forward is the RESOLVED container port, not the Service port", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"echo-abc"}}],"ports":[{"name":"http","port":9090}]}]}`, nil)
+
+		fake := &fakeForwardProcess{port: "1", hasResult: true}
+
+		var startedArgv []string
+
+		c := &Cluster{Tier: TierKind, Runner: s, forwardStart: func(_ context.Context, argv []string) (forwardProcess, error) {
+			startedArgv = argv
+
+			return fake, nil
+		}}
+
+		_, err := c.ServiceURL(context.Background(), "ns", "echo", 8080)
+		require.NoError(t, err)
+		assert.Contains(t, startedArgv, ":9090", "8080 is the Service port; 9090 is what the endpoint actually listens on")
+		assert.NotContains(t, startedArgv, ":8080")
+	})
+
 	t.Run("a service with no ready endpoint refuses before starting a forward", func(t *testing.T) {
 		s := &stubRunner{}
-		s.on("kubectl get endpoints", "", nil)
+		s.on("kubectl get endpoints", `{"subsets":[]}`, nil)
 
 		c := &Cluster{Tier: TierKind, Runner: s, forwardStart: func(context.Context, []string) (forwardProcess, error) {
 			t.Fatal("must not start a forward with no resolved pod")
@@ -176,9 +432,10 @@ func TestServiceURLKindTier(t *testing.T) {
 
 	t.Run("a forward that never becomes ready is closed and reported", func(t *testing.T) {
 		s := &stubRunner{}
-		s.on("kubectl get endpoints", "myapp-web-abcde\n", nil)
+		s.on("kubectl get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"myapp-web-abcde"}}],"ports":[{"port":8080}]}]}`, nil)
 
-		fake := &fakeForwardProcess{} // never emits the Forwarding line
+		fake := &fakeForwardProcess{} // never ready
 
 		c := &Cluster{Tier: TierKind, Runner: s, ForwardReadyTimeout: 10 * time.Millisecond,
 			forwardStart: func(context.Context, []string) (forwardProcess, error) { return fake, nil }}
@@ -191,9 +448,10 @@ func TestServiceURLKindTier(t *testing.T) {
 
 	t.Run("explicit Tier field takes the kind path exactly like a kind- context", func(t *testing.T) {
 		s := &stubRunner{}
-		s.on("kubectl --context devel@oidc get endpoints", "pod-x\n", nil)
+		s.on("kubectl --context devel@oidc get endpoints",
+			`{"subsets":[{"addresses":[{"targetRef":{"name":"pod-x"}}],"ports":[{"port":80}]}]}`, nil)
 
-		fake := &fakeForwardProcess{lines: []string{"Forwarding from 127.0.0.1:1111 -> 80"}}
+		fake := &fakeForwardProcess{port: "1111", hasResult: true}
 
 		c := &Cluster{Tier: TierKind, Kubecontext: "devel@oidc", Runner: s,
 			forwardStart: func(context.Context, []string) (forwardProcess, error) { return fake, nil }}
