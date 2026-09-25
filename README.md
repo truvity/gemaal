@@ -185,6 +185,46 @@ namespace-name convention (`emp-` → employee, `ci-` → ci) for charts
 that want it as a value. `gemaal.example.yaml` documents the committed
 per-repo configuration.
 
+### The kind tier
+
+Public repositories run the same suite against a disposable
+[kind](https://kind.sigs.k8s.io/) cluster on a CI runner or a laptop,
+where the shared cluster's service CIDR either is not routed or (Docker
+Desktop on macOS) cannot be routed to at all. The suite code is
+identical on both tiers; only the harness decides how to reach things,
+via `harness.DetectTier` — a DIFFERENT axis from `TierForNamespace`'s
+namespace-name convention, answering "which kind of cluster is this
+run talking to" rather than classifying a name:
+
+- **Detection**: `GEMAAL_TIER=kind` (explicit — what CI sets), or,
+  failing that, a `Cluster.Kubecontext` named `kind-*` (kind's own
+  convention). `Cluster.Tier` overrides both when a caller sets it
+  directly.
+- **Namespace**: fixed or configurable, same as every other tier —
+  set `Options.Namespace` or `GEMAAL_NAMESPACE`, which already skip
+  identity resolution entirely; a disposable cluster needs no personal
+  namespace derived from a caller's identity.
+- **`ServiceURL`** opens a `kubectl port-forward` straight to the Pod
+  behind the Service (never to `svc/…`, which would leave the chosen
+  Pod invisible) and returns `http://127.0.0.1:<local port>` instead of
+  dialing the ClusterIP directly. The call site is unchanged from the
+  shared tier. The forward is tracked on the `*Cluster` and stopped by
+  `(*Cluster).CloseForwards` — call it from your own `t.Cleanup`, or
+  let `harness.Run` close it automatically after `m.Run()` when using
+  the `Suite`/`TestMain` pattern above. `(*Cluster).ForwardFor` looks up
+  an open forward's Pod name, for enriching a later request failure
+  (`PortForward.Err`) — a pod restart mid-test then reads as exactly
+  that, not a bare service bug.
+- **`harness.DeployApp`** installs RING 3 ALONE — no ring2 pair — for
+  the kind tier's lane, where the project's own infrastructure chart is
+  never installed; a fixture substitutes for it. Mirrors
+  `harness.DeployInfra`'s ring2-alone counterpart on the other ring.
+- **Leases** (tenant claims) are unchanged: they are `coordination.k8s.io`
+  API objects reached the same way as every other kubectl call in this
+  package, with no dependency on service-CIDR routing — no TTL
+  housekeeping is assumed on a disposable cluster, but claiming still
+  protects a shared kind cluster against two concurrent suites.
+
 ## AWS access
 
 The service uses the AWS SDK default credential chain — the chart takes

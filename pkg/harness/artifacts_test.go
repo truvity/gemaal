@@ -4,6 +4,7 @@
 package harness
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,4 +81,82 @@ func TestInfraChartTgzIgnoresAppChart(t *testing.T) {
 	_, err := InfraChartTgz(dir, "dms")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dms-infra-*.tgz")
+}
+
+// The kind tier's ring3-alone lane's whole point: an infra chart that
+// was never built is the NORMAL state here, not an incomplete pair.
+// ChartTgzs rejects this same directory, and must keep doing so.
+func TestAppChartTgzWithoutInfraChart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dms-0.0.1-abc.tgz"), nil, 0o600))
+
+	app, err := AppChartTgz(dir, "dms")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "dms-0.0.1-abc.tgz"), app)
+
+	_, _, pairErr := ChartTgzs(dir, "dms")
+	require.Error(t, pairErr, "ChartTgzs must still refuse a half-built pair")
+}
+
+// The infra chart must never be mistaken for the app one: "dms-" is a
+// prefix of "dms-infra-", so a careless match returns the ring2 chart
+// and the kind lane installs the infrastructure it exists to skip.
+func TestAppChartTgzIgnoresInfraChart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dms-infra-0.0.1-abc.tgz"), nil, 0o600))
+
+	_, err := AppChartTgz(dir, "dms")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dms-*.tgz")
+}
+
+func TestAppChartTgzMissingDir(t *testing.T) {
+	t.Parallel()
+
+	_, err := AppChartTgz(filepath.Join(t.TempDir(), "nope"), "dms")
+	require.ErrorContains(t, err, "not found")
+}
+
+func TestDeployApp(t *testing.T) {
+	t.Run("installs the app release alone from the packaged app chart", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "dms-0.0.1-abc.tgz"), nil, 0o600))
+
+		gitRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(gitRoot, "dist", "dms", "charts"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(gitRoot, "dist", "dms", "charts", "dms-0.0.1-abc.tgz"), nil, 0o600))
+
+		s := &stubRunner{}
+		c := &Cluster{Runner: s}
+		tenant := Tenant{Namespace: "ci-kind-suite", Release: "myapp"}
+
+		err := DeployApp(context.Background(), c, tenant, gitRoot, "dms", []string{"v.yaml"}, []string{"k=v"})
+		require.NoError(t, err)
+
+		require.Len(t, s.calls, 1)
+		joined := s.joined()[0]
+		assert.Contains(t, joined, "--install myapp "+filepath.Join(gitRoot, "dist", "dms", "charts", "dms-0.0.1-abc.tgz"),
+			"the release is named after the tenant, no -infra suffix")
+		assert.Contains(t, joined, "--namespace ci-kind-suite")
+		assert.Contains(t, joined, "--values v.yaml")
+		assert.Contains(t, joined, "--set k=v")
+	})
+
+	t.Run("a missing app chart names the packaging step, not the build hook", func(t *testing.T) {
+		gitRoot := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(gitRoot, "dist", "dms", "charts"), 0o755))
+
+		s := &stubRunner{}
+		c := &Cluster{Runner: s}
+		tenant := Tenant{Namespace: "ci-kind-suite", Release: "myapp"}
+
+		err := DeployApp(context.Background(), c, tenant, gitRoot, "dms", nil, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "helmctl package")
+		assert.Empty(t, s.calls, "no helm install when the chart is missing")
+	})
 }

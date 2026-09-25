@@ -3,6 +3,20 @@
 One line per release; full detail lives in the release notes and the
 git history.
 
+## 0.24.x
+- **0.24.0** — the harness gains a kind tier, for public repos that run
+  the same e2e suites against a disposable
+  [kind](https://kind.sigs.k8s.io/) cluster instead of the shared one:
+  `harness.DetectTier` (`GEMAAL_TIER=kind`, or a `kind-*` kube context)
+  is a different axis from `TierForNamespace`'s namespace-name
+  convention, and it is what `(*Cluster).ServiceURL` now checks — on
+  kind, where no service-CIDR route exists, it opens a `kubectl
+  port-forward` straight to the Service's Pod and returns a local URL
+  instead of dialing the ClusterIP directly, with the same call site as
+  every other tier. `harness.DeployApp` installs ring3 alone, mirroring
+  `DeployInfra`'s ring2-alone counterpart, for kind's fixture-replaces-ring2
+  lane.
+
 ## 0.23.x
 - **0.23.1** — the ko image name follows KO'S precedence, which is
   `preserve_import_paths`, then `base_import_paths`, then `bare` — not

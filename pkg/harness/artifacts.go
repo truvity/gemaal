@@ -77,6 +77,40 @@ func InfraChartTgz(chartsDir, project string) (string, error) {
 	return "", fmt.Errorf("no packaged %s chart in %s", prefix+"*.tgz", chartsDir)
 }
 
+// AppChartTgz locates the packaged RING 3 chart alone, for the kind
+// tier's DeployApp: the project's application chart with no ring2
+// infrastructure pair required — kind's own fixture substitutes for the
+// project's infra chart, which is never built or installed there.
+//
+// Mirrors InfraChartTgz's shape exactly, on the app side: ChartTgzs
+// demands the complete pair, and an absent infra chart is its error;
+// here an absent (or simply unbuilt) infra chart is the NORMAL state,
+// and this must not fall into the "app-" prefix trap ChartTgzs's own
+// tests guard — an infra tarball also matches the app prefix, so infra
+// names are excluded explicitly rather than relying on match order.
+func AppChartTgz(chartsDir, project string) (string, error) {
+	entries, err := os.ReadDir(chartsDir)
+	if err != nil {
+		return "", fmt.Errorf("packaged charts not found: %w", err)
+	}
+
+	infraPrefix := project + "-infra-"
+	prefix := project + "-"
+
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".tgz") || strings.HasPrefix(name, infraPrefix) {
+			continue
+		}
+
+		if strings.HasPrefix(name, prefix) {
+			return filepath.Join(chartsDir, name), nil
+		}
+	}
+
+	return "", fmt.Errorf("no packaged %s chart in %s (excluding %s)", prefix+"*.tgz", chartsDir, infraPrefix+"*.tgz")
+}
+
 // ChartTgzs locates the packaged ring pair in chartsDir
 // (dist/{project}/charts after the snapshot pipeline): the infra chart
 // is {project}-infra-*.tgz, the app chart {project}-*.tgz. Errors state
@@ -197,5 +231,33 @@ func DeployPair(
 		Labels: Labels{
 			ExecutionID: DefaultExecutionID(time.Now()),
 		},
+	})
+}
+
+// DeployApp installs RING 3 ALONE: the application chart, with no ring2
+// infrastructure pair — the kind tier's lane, mirroring DeployInfra's
+// ring2-alone counterpart on the other ring. The project's own
+// infrastructure chart is never installed on kind; a fixture substitutes
+// for it, so nothing here waits on or knows about one. Uninstall is the
+// caller's own cluster.Uninstall(ctx, tenant.Namespace, tenant.Release)
+// — there is no "-infra" companion release to also remove.
+func DeployApp(
+	ctx context.Context,
+	cluster *Cluster,
+	tenant Tenant,
+	gitRoot, project string,
+	valuesFiles, set []string,
+) error {
+	appTgz, err := AppChartTgz(filepath.Join(gitRoot, "dist", project, "charts"), project)
+	if err != nil {
+		return fmt.Errorf("%w — package it first (helmctl package --chart charts/%s)", err, project)
+	}
+
+	return cluster.Install(ctx, tenant.Namespace, Install{
+		Release:     tenant.Release,
+		Chart:       appTgz,
+		ValuesFiles: valuesFiles,
+		Set:         set,
+		Labels:      Labels{ExecutionID: DefaultExecutionID(time.Now())},
 	})
 }

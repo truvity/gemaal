@@ -38,11 +38,20 @@ func (c *Cluster) ServiceClusterIP(ctx context.Context, namespace, service strin
 	return ip, nil
 }
 
-// ServiceURL renders "http://<clusterIP>:<port>" for a Service — reachable
-// directly when the operator routes the service CIDR to the test network
-// (e.g. a tailnet subnet route), which is what makes port-forwards
-// unnecessary in this harness.
+// ServiceURL renders a URL that reaches a Service, however this
+// Cluster's tier reaches things: on the shared tier (the default, every
+// existing caller) it is "http://<clusterIP>:<port>" — reachable
+// directly because the operator routes the service CIDR to the test
+// network (e.g. a tailnet subnet route). On TierKind, where no such
+// route exists (a laptop's Docker Desktop cannot route to one at all),
+// it opens a kubectl port-forward to the Pod behind the Service instead
+// and returns "http://127.0.0.1:<local port>" — see
+// servicePortForwardURL and (*Cluster).CloseForwards.
 func (c *Cluster) ServiceURL(ctx context.Context, namespace, service string, port int) (string, error) {
+	if c.tier() == TierKind {
+		return c.servicePortForwardURL(ctx, namespace, service, port)
+	}
+
 	ip, err := c.ServiceClusterIP(ctx, namespace, service)
 	if err != nil {
 		return "", err

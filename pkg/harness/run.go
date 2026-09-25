@@ -187,6 +187,12 @@ func (s Suite) run(ctx context.Context, m TestMain) (int, error) {
 
 	cluster := s.cluster()
 
+	// Belt-and-suspenders for the kind tier's port-forwards: a suite
+	// that calls ServiceURL but never calls CloseForwards itself (or
+	// panics before reaching its own t.Cleanup) still stops them here.
+	// A shared-tier suite opened none, so this costs nothing.
+	defer cluster.CloseForwards()
+
 	// The tenant claim: a coordination.k8s.io Lease renewed while the
 	// suite runs. Correctness lock — without it, two suites or two
 	// AGENTS resolving the same release race helm operations and each
