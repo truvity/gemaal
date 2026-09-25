@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -119,6 +120,38 @@ type Cluster struct {
 	// LabelDomain prefixes the ledger labels; DefaultLabelDomain when
 	// empty.
 	LabelDomain string
+
+	// Tier names the environment/context tier this Cluster runs
+	// against. Empty auto-detects from Kubecontext via DetectTier, so
+	// every existing caller — which never heard of tiers and never set
+	// this field — keeps today's direct-ClusterIP ServiceURL behavior
+	// on every context that is not kind's own "kind-*" convention.
+	Tier string
+
+	// ForwardReadyTimeout bounds how long ServiceURL waits for a kind
+	// tier port-forward's "Forwarding from" line; DefaultForwardReadyTimeout
+	// when zero.
+	ForwardReadyTimeout time.Duration
+
+	// forwardStart starts a kind tier port-forward's subprocess;
+	// execForwardStart (a real kubectl) when nil. Tests script this
+	// seam the way stubRunner scripts kubectl — Run and Output on the
+	// Runner interface both block to completion, which a port-forward
+	// never reaches on its own, so it needs a seam of its own.
+	forwardStart forwardStarter
+
+	forwardsMu sync.Mutex
+	forwards   []*PortForward
+}
+
+// tier resolves this Cluster's effective tier: Tier when set, else
+// DetectTier(Kubecontext).
+func (c *Cluster) tier() string {
+	if c.Tier != "" {
+		return c.Tier
+	}
+
+	return DetectTier(c.Kubecontext)
 }
 
 func (c *Cluster) runner() Runner {

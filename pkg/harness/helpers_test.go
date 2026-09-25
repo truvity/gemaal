@@ -69,7 +69,7 @@ func clearTenantEnv(t *testing.T) {
 
 	for _, k := range []string{
 		EnvNamespace, EnvRelease, EnvKubecontext, EnvServer, EnvCIRunNumber, EnvCIRunAttempt,
-		EnvSkipBuild, EnvSkipDeploy, EnvSkipDestroy, EnvKeep,
+		EnvSkipBuild, EnvSkipDeploy, EnvSkipDestroy, EnvKeep, EnvTier,
 	} {
 		t.Setenv(k, "")
 	}
