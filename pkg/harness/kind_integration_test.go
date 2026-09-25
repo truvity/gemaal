@@ -74,7 +74,12 @@ func TestServiceURLAgainstRealKindCluster(t *testing.T) {
 	cluster := &Cluster{Kubeconfig: kubeconfig, Tier: TierKind}
 	t.Cleanup(cluster.CloseForwards)
 
-	url, err := cluster.ServiceURL(ctx, namespace, "echo", 80)
+	// The Service port (8080) deliberately differs from the container
+	// port (80, named "http") — the exact shape that broke when the
+	// forward dialed the SERVICE port instead of the endpoint's own
+	// resolved port. A same-numbered port/targetPort pair would not
+	// have caught that regression.
+	url, err := cluster.ServiceURL(ctx, namespace, "echo", 8080)
 	require.NoError(t, err, "ServiceURL must open a port-forward and return a reachable local URL")
 	t.Logf("kind tier ServiceURL: %s", url)
 
@@ -85,6 +90,11 @@ func TestServiceURLAgainstRealKindCluster(t *testing.T) {
 // echoManifest is a Deployment + Service small enough to schedule
 // instantly on kind and to serve an HTTP response with no readiness
 // probe needed (nginx:alpine listens the moment the container starts).
+// The Service's port (8080) is deliberately NOT the container's port
+// (80, reached by the NAME "http", not by number) — the exact shape
+// that exposed the "wrong port when port != targetPort" defect: forwarding
+// to the Service's own port number instead of the endpoint's resolved
+// one would have connected to nothing.
 func echoManifest(namespace string) string {
 	return fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
@@ -103,7 +113,8 @@ spec:
         - name: echo
           image: nginx:alpine
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 80
 ---
 apiVersion: v1
 kind: Service
@@ -113,7 +124,7 @@ metadata:
 spec:
   selector: {app: echo}
   ports:
-    - port: 80
-      targetPort: 80
+    - port: 8080
+      targetPort: http
 `, namespace)
 }
