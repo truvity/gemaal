@@ -4,6 +4,15 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.24.x
+- **0.24.1** — `(*Cluster).ReleaseDeployments` (and `WaitForDeployments`,
+  which is built on it) now also recognizes a Deployment by its
+  `app.kubernetes.io/instance` label, falling back to it whenever the
+  `meta.helm.sh/release-name` annotation is absent. A release a GitOps
+  controller renders with `helm template` and applies directly — never
+  running `helm install/upgrade` — carries the standard chart label but
+  none of helm's own release annotations, so the harness previously
+  found no Deployments to wait on. The annotation still wins when both
+  are present.
 - **0.24.0** — the harness gains a kind tier, for public repos that run
   the same e2e suites against a disposable
   [kind](https://kind.sigs.k8s.io/) cluster instead of the shared one:

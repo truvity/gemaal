@@ -87,6 +87,73 @@ func TestReleaseDeployments(t *testing.T) {
 	assert.Equal(t, []string{"app-web", "app-redirect", "infra-nats"}, names)
 }
 
+func TestReleaseDeploymentsFallsBackToInstanceLabel(t *testing.T) {
+	t.Run("annotation only (helm install/upgrade)", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-web", "annotations": {"meta.helm.sh/release-name": "url-shortener"}}}
+		]}`, nil)
+
+		names, err := (&Cluster{Runner: s}).ReleaseDeployments(context.Background(), "emp-jdoe", "url-shortener")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"app-web"}, names)
+	})
+
+	t.Run("label only (rendered by a GitOps controller, e.g. helm template)", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-web", "labels": {"app.kubernetes.io/instance": "url-shortener"}}}
+		]}`, nil)
+
+		names, err := (&Cluster{Runner: s}).ReleaseDeployments(context.Background(), "emp-jdoe", "url-shortener")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"app-web"}, names)
+	})
+
+	t.Run("annotation and label agree", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-web",
+				"annotations": {"meta.helm.sh/release-name": "url-shortener"},
+				"labels": {"app.kubernetes.io/instance": "url-shortener"}}}
+		]}`, nil)
+
+		names, err := (&Cluster{Runner: s}).ReleaseDeployments(context.Background(), "emp-jdoe", "url-shortener")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"app-web"}, names)
+	})
+
+	t.Run("annotation names release A, label names release B: belongs to A only", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-web",
+				"annotations": {"meta.helm.sh/release-name": "release-a"},
+				"labels": {"app.kubernetes.io/instance": "release-b"}}}
+		]}`, nil)
+
+		c := &Cluster{Runner: s}
+
+		names, err := c.ReleaseDeployments(context.Background(), "emp-jdoe", "release-a")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"app-web"}, names, "annotation is authoritative when present")
+
+		names, err = c.ReleaseDeployments(context.Background(), "emp-jdoe", "release-b")
+		require.NoError(t, err)
+		assert.Empty(t, names, "the label never overrides a present annotation")
+	})
+
+	t.Run("neither annotation nor label is excluded", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "bare"}}
+		]}`, nil)
+
+		names, err := (&Cluster{Runner: s}).ReleaseDeployments(context.Background(), "emp-jdoe", "url-shortener")
+		require.NoError(t, err)
+		assert.Empty(t, names)
+	})
+}
+
 func TestWaitForDeployments(t *testing.T) {
 	t.Run("waits for each owned deployment", func(t *testing.T) {
 		s := &stubRunner{}
