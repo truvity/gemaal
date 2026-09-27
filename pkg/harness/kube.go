@@ -61,7 +61,14 @@ func (c *Cluster) ServiceURL(ctx context.Context, namespace, service string, por
 }
 
 // ReleaseDeployments lists the Deployments owned by any of the given
-// releases (the meta.helm.sh/release-name annotation helm stamps).
+// releases. A Deployment belongs to a release when the
+// meta.helm.sh/release-name annotation helm stamps names it, or, when
+// that annotation is absent, when the app.kubernetes.io/instance label
+// every chart carries names it instead — the only signal left on a
+// release a GitOps controller rendered with "helm template" and applied
+// directly, never running "helm install/upgrade" to set the annotation.
+// The annotation is authoritative when present: a Deployment annotated
+// for one release is never matched by a label naming another.
 func (c *Cluster) ReleaseDeployments(ctx context.Context, namespace string, releases ...string) ([]string, error) {
 	out, err := c.runner().Output(ctx,
 		c.kubectlArgs("get", "deployments", "-n", namespace, "-o", "json")...)
@@ -74,6 +81,7 @@ func (c *Cluster) ReleaseDeployments(ctx context.Context, namespace string, rele
 			Metadata struct {
 				Name        string            `json:"name"`
 				Annotations map[string]string `json:"annotations"`
+				Labels      map[string]string `json:"labels"`
 			} `json:"metadata"`
 		} `json:"items"`
 	}
@@ -90,12 +98,23 @@ func (c *Cluster) ReleaseDeployments(ctx context.Context, namespace string, rele
 	var names []string
 
 	for i := range list.Items {
-		if owned[list.Items[i].Metadata.Annotations["meta.helm.sh/release-name"]] {
+		if owned[releaseOf(list.Items[i].Metadata.Annotations, list.Items[i].Metadata.Labels)] {
 			names = append(names, list.Items[i].Metadata.Name)
 		}
 	}
 
 	return names, nil
+}
+
+// releaseOf resolves the release name an object belongs to: the
+// meta.helm.sh/release-name annotation helm stamps when present,
+// otherwise the app.kubernetes.io/instance label every chart carries.
+func releaseOf(annotations, labels map[string]string) string {
+	if name, ok := annotations["meta.helm.sh/release-name"]; ok {
+		return name
+	}
+
+	return labels["app.kubernetes.io/instance"]
 }
 
 // WaitForDeployments waits for every Deployment owned by the releases to
