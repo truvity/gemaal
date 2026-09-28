@@ -117,6 +117,12 @@ type Cluster struct {
 	// DefaultRolloutTimeout when zero.
 	RolloutTimeout time.Duration
 
+	// RolloutPollInterval paces WaitForDeploymentsAtVersion's polling of
+	// each Deployment's own JSON; DefaultRolloutPollInterval when zero.
+	// Tests set this small to poll a scripted sequence without the wall
+	// clock in the way.
+	RolloutPollInterval time.Duration
+
 	// LabelDomain prefixes the ledger labels; DefaultLabelDomain when
 	// empty.
 	LabelDomain string
