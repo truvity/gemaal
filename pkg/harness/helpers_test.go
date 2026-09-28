@@ -6,23 +6,33 @@ import (
 	"testing"
 )
 
-// stubRule scripts one matched invocation.
+// stubRule scripts one matched invocation, or a SEQUENCE of them: outs is
+// walked in order across repeated calls matching the same prefix, then
+// holds on the last entry — a rollout observed mid-flight on one poll and
+// finished (or still stuck) on the next.
 type stubRule struct {
 	prefix string
-	out    string
+	outs   []string
 	err    error
+	calls  int
 }
 
 // stubRunner is the injected executor: rules match on a prefix of the
 // space-joined argv, newest rule first. Unmatched commands succeed with
 // empty output. Every call is recorded for argv assertions.
 type stubRunner struct {
-	rules []stubRule
+	rules []*stubRule
 	calls [][]string
 }
 
 func (s *stubRunner) on(prefix, out string, err error) {
-	s.rules = append([]stubRule{{prefix: prefix, out: out, err: err}}, s.rules...)
+	s.onSeq(prefix, []string{out}, err)
+}
+
+// onSeq scripts a prefix to return each of outs in turn across
+// successive matching calls, repeating the last one once exhausted.
+func (s *stubRunner) onSeq(prefix string, outs []string, err error) {
+	s.rules = append([]*stubRule{{prefix: prefix, outs: outs, err: err}}, s.rules...)
 }
 
 func (s *stubRunner) exec(argv []string) (string, error) {
@@ -31,7 +41,13 @@ func (s *stubRunner) exec(argv []string) (string, error) {
 	joined := strings.Join(argv, " ")
 	for _, r := range s.rules {
 		if strings.HasPrefix(joined, r.prefix) {
-			return r.out, r.err
+			i := r.calls
+			if i >= len(r.outs) {
+				i = len(r.outs) - 1
+			}
+			r.calls++
+
+			return r.outs[i], r.err
 		}
 	}
 

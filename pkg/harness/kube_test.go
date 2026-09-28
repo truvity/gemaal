@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -188,6 +189,89 @@ func TestWaitForDeployments(t *testing.T) {
 		err := (&Cluster{Runner: s}).WaitForDeployments(context.Background(), "emp-jdoe", "url-shortener")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "emp-jdoe/app-web")
+	})
+}
+
+const versionLabel = "app.kubernetes.io/version"
+
+// deploymentJSON renders one Deployment's `kubectl get -o json` at a
+// given generation/version, replica count and rollout progress — the
+// exact shape WaitForDeploymentsAtVersion polls.
+func deploymentJSON(generation int, version string, replicas, statusReplicas, updated, available int) string {
+	return fmt.Sprintf(`{
+		"metadata": {"generation": %d},
+		"spec": {"replicas": %d, "template": {"metadata": {"labels": {"app.kubernetes.io/version": %q}}}},
+		"status": {"observedGeneration": %d, "replicas": %d, "updatedReplicas": %d, "availableReplicas": %d}
+	}`, generation, replicas, version, generation, statusReplicas, updated, available)
+}
+
+func TestWaitForDeploymentsAtVersion(t *testing.T) {
+	t.Run("in-progress then complete", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-stat", "annotations": {"meta.helm.sh/release-name": "url-shortener"}}}
+		]}`, nil)
+		// Poll 1: the pod template already names the new version (the
+		// GitOps controller pushed it), but the rollout has not finished —
+		// one old pod is still around and one new one is not yet
+		// available. Poll 2: fully rolled out.
+		s.onSeq("kubectl get deployment app-stat", []string{
+			deploymentJSON(2, "v2", 2, 3, 1, 1),
+			deploymentJSON(2, "v2", 2, 2, 2, 2),
+		}, nil)
+
+		c := &Cluster{Runner: s, RolloutTimeout: time.Second, RolloutPollInterval: time.Millisecond}
+
+		err := c.WaitForDeploymentsAtVersion(context.Background(), "emp-jdoe", versionLabel, "v2", "url-shortener")
+		require.NoError(t, err)
+
+		joined := s.joined()
+		require.GreaterOrEqual(t, len(joined), 3, "one list + at least two polls")
+		assert.Contains(t, joined[1], "get deployment app-stat -n emp-jdoe -o json")
+	})
+
+	t.Run("stuck on the OLD version times out naming the deployment", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-stat", "annotations": {"meta.helm.sh/release-name": "url-shortener"}}}
+		]}`, nil)
+		// The Deployment's own spec never moves to v2 within this
+		// window — e.g. a GitOps controller has not yet applied the
+		// promoted app release when this polls.
+		s.on("kubectl get deployment app-stat", deploymentJSON(1, "v1", 2, 2, 2, 2), nil)
+
+		c := &Cluster{Runner: s, RolloutTimeout: 20 * time.Millisecond, RolloutPollInterval: time.Millisecond}
+
+		err := c.WaitForDeploymentsAtVersion(context.Background(), "emp-jdoe", versionLabel, "v2", "url-shortener")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "emp-jdoe/app-stat")
+		assert.Contains(t, err.Error(), `want "v2"`)
+	})
+
+	t.Run("stuck mid-rollout at the right version times out naming what is still unready", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": [
+			{"metadata": {"name": "app-stat", "annotations": {"meta.helm.sh/release-name": "url-shortener"}}}
+		]}`, nil)
+		// The template is already v2, but one replica never becomes
+		// available within this window (e.g. a CrashLoopBackOff).
+		s.on("kubectl get deployment app-stat", deploymentJSON(2, "v2", 2, 2, 2, 1), nil)
+
+		c := &Cluster{Runner: s, RolloutTimeout: 20 * time.Millisecond, RolloutPollInterval: time.Millisecond}
+
+		err := c.WaitForDeploymentsAtVersion(context.Background(), "emp-jdoe", versionLabel, "v2", "url-shortener")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "emp-jdoe/app-stat")
+		assert.Contains(t, err.Error(), "1/2 replicas available")
+	})
+
+	t.Run("zero owned deployments is an error", func(t *testing.T) {
+		s := &stubRunner{}
+		s.on("kubectl get deployments", `{"items": []}`, nil)
+
+		err := (&Cluster{Runner: s}).WaitForDeploymentsAtVersion(context.Background(), "emp-jdoe", versionLabel, "v2", "url-shortener")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no Deployments")
 	})
 }
 

@@ -4,6 +4,18 @@ One line per release; full detail lives in the release notes and the
 git history.
 
 ## 0.24.x
+- **0.24.3** — `(*Cluster).WaitForDeploymentsAtVersion`: `WaitForDeployments`
+  (`kubectl rollout status`) proves a Deployment finished rolling out, but
+  not WHICH generation — called before a controller has pushed the new
+  spec at all, it sees the OLD generation already fully rolled out and
+  returns immediately. A test-chart Job a GitOps controller applies while
+  the app release's own rollout is still catching up hits exactly this: the
+  e2e suite's readiness wait passed against the PREVIOUS version's pods.
+  The new call polls each Deployment's own JSON — the same fields
+  `kubectl rollout status` reads — until its pod template carries a given
+  `versionLabel=want` AND that generation is fully, availably rolled out;
+  a stuck rollout's error names the Deployment and the one condition still
+  unmet.
 - **0.24.1** — `(*Cluster).ReleaseDeployments` (and `WaitForDeployments`,
   which is built on it) now also recognizes a Deployment by its
   `app.kubernetes.io/instance` label, falling back to it whenever the
