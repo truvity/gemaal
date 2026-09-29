@@ -46,18 +46,36 @@ clean:
     rm -rf dist/ coverage.out
 
 # Run all checks (build + test + lint + vuln)
-# Render the chart with the shipped values plus a fully-featured set;
-# prove the schema rejects an unknown key (values.schema.json is the
-# contract — a typo must fail the render, not be silently ignored).
+# Render the chart with the shipped values plus a fully-featured set, and
+# prove each matches its golden under tests/golden/gemaal/ (component
+# contract C3 — a reviewer sees what a change did to the output, not just
+# that it still rendered). Also proves every fixture under
+# tests/invalid/gemaal/ is refused by the schema, not just one inline --set.
 chart-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
     helm lint charts/gemaal
-    helm template gemaal charts/gemaal >/dev/null
+    diff -u tests/golden/gemaal/default.yaml <(helm template gemaal charts/gemaal)
+    diff -u tests/golden/gemaal/full.yaml <(helm template gemaal charts/gemaal \
+        --set confirm=true \
+        --set rbac.sweep.enabled=true \
+        --set exposure.enabled=true \
+        --set exposure.hostname=gemaal.example.com)
+    for fixture in tests/invalid/gemaal/*; do
+        if helm template gemaal charts/gemaal --values "$fixture" >/dev/null 2>&1; then
+            echo "ERROR: gemaal accepted $fixture — values.schema.json not enforced" >&2
+            exit 1
+        fi
+    done
+
+# Regenerate the golden renders under tests/golden/gemaal/ — review the diff.
+golden:
+    helm template gemaal charts/gemaal >tests/golden/gemaal/default.yaml
     helm template gemaal charts/gemaal \
         --set confirm=true \
         --set rbac.sweep.enabled=true \
         --set exposure.enabled=true \
-        --set exposure.hostname=gemaal.example.com >/dev/null
-    ! helm template gemaal charts/gemaal --set bogusKey=1 >/dev/null 2>&1
+        --set exposure.hostname=gemaal.example.com >tests/golden/gemaal/full.yaml
 
 check: build test lint chart-lint vuln leak-canary
 

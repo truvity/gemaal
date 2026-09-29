@@ -1,0 +1,328 @@
+---
+# Source: gemaal/templates/networkpolicy.yaml
+# Egress-only: DNS, TLS for the API server and AWS SSM, and the EKS Pod
+# Identity credential endpoint (cleartext HTTP on a link-local address —
+# the eks-pod-identity-agent on the node; without this rule the SDK's
+# credential fetch times out and every SSM sweep hangs minutes into a
+# credential error). Ingress (from the gateway fleet to the panel/RPC)
+# is deployer-owned and lives next to the exposure — the expose-a-ui
+# split.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gemaal-egress
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gemaal
+      app.kubernetes.io/instance: gemaal
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # 443 carries GitHub + AWS APIs — including STS, which is the
+    # ENTIRE credential path under IRSA (the web-identity token is a
+    # projected file; no extra egress needed). Both auth modes are
+    # first-class here, not accidents of each other's allowances.
+    - ports:
+        - port: 443
+          protocol: TCP
+    # EKS Pod Identity's credential endpoint: the node-local agent at a
+    # link-local address, plain HTTP. Harmless under IRSA (nothing
+    # dials it); required under PIA.
+    - to:
+        - ipBlock:
+            cidr: 169.254.170.23/32
+      ports:
+        - port: 80
+          protocol: TCP
+
+---
+# Source: gemaal/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gemaal
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+
+---
+# Source: gemaal/templates/configmap.yaml
+# The service configuration. dryRun is rendered from `confirm` — the
+# one deliberate flip — so a values file cannot half-say it: absent
+# confirm means dryRun: true means shadow mode.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gemaal-config
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+data:
+  config.yaml: |
+    dryRun: false
+    allowList:
+      s3Buckets: []
+      ssmRoots:
+      - /test/
+    authz:
+      adminGroups: []
+      audience: ""
+      groupPrefix: 'emp:'
+      issuerURL: ""
+      tokenAudiences: []
+    awsRegion: ""
+    grace: 48h
+    hold:
+      default: 8h
+      max: 168h
+    housekeepingInterval: 1m
+    identity:
+      emails: {}
+      personalNamespace: emp-{slug}
+    labelDomain: gemaal.io
+    tierLabel: tenancy.truvity.io/tier
+    tiers:
+      ci:
+        ttl: 24h
+      employee:
+        ttl: 14h
+
+---
+# Source: gemaal/templates/rbac.yaml
+# The watcher's read set. Cluster-scoped because tenancy namespaces come
+# and go and RBAC cannot select by label:
+#
+#   - namespaces: the tier-label selection (`kubectl get ns -l ...`)
+#   - secrets: helm's release truth AND the label ledger — reads plus
+#     the keep-until patch (Checkout/Extend). This is the price of the
+#     no-store design; the role holds NO other secret-bearing verbs.
+#   - tokenreviews: authenticating workload callers (the mutations).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gemaal-watch
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, patch]
+  # The harness's claim Leases: Decommission refuses while one is LIVE
+  # (a suite is running against the tenant). Read-only — the service
+  # never writes claims, it only respects them.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get]
+  - apiGroups: [authentication.k8s.io]
+    resources: [tokenreviews]
+    verbs: [create]
+
+---
+# Source: gemaal/templates/rbac.yaml
+# Sweep rights: what `helm uninstall` needs — delete on whatever the
+# watched charts installed, which is unbounded in general. Wildcard by
+# honest necessity, OFF by default, and pointless without confirm=true:
+# a shadow-mode service never calls a deleting verb. The app-side rails
+# (tier labels, allow-listed roots, plan re-authorization) are the real
+# bound; this flag is the cluster refusing to hand deletion rights to a
+# deployment that has not asked for them twice.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gemaal-sweep
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+
+---
+# Source: gemaal/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gemaal-watch
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gemaal-watch
+subjects:
+  - kind: ServiceAccount
+    name: gemaal
+    namespace: default
+
+---
+# Source: gemaal/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gemaal-sweep
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gemaal-sweep
+subjects:
+  - kind: ServiceAccount
+    name: gemaal
+    namespace: default
+
+---
+# Source: gemaal/templates/service.yaml
+# The one thing the exposure chain needs from this chart: the Service
+# the deployer's HTTPRoute targets (RPC, panel and healthz share the
+# listener).
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemaal
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: gemaal/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemaal
+  labels:
+    app.kubernetes.io/name: gemaal
+    app.kubernetes.io/instance: gemaal
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: gemaal-0.0.0
+spec:
+  # One replica on purpose: the housekeeping loop is not leader-elected,
+  # and two pumps would race their uninstalls.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gemaal
+      app.kubernetes.io/instance: gemaal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gemaal
+        app.kubernetes.io/instance: gemaal
+      annotations:
+        checksum/config: fd4adef25e8e743305fcc56602676d8458e746bb3ebdd0f0eb3910de496104e7
+    spec:
+      serviceAccountName: gemaal
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gemaal
+          image: "ghcr.io/truvity/gemaal/server:0.0.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config
+            - /etc/gemaal/config.yaml
+          env:
+            # uid 65532 has no passwd entry in the alpine/k8s base, so
+            # the runtime would default HOME to "/" — unwritable on the
+            # read-only rootfs. Pin helm/kubectl caches to the emptyDir.
+            - name: HOME
+              value: /home/nonroot
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gemaal
+              readOnly: true
+            # helm's cache/config; the root filesystem is read-only.
+            - name: helm-home
+              mountPath: /home/nonroot
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: gemaal-config
+        - name: helm-home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
