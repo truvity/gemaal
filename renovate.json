@@ -1,7 +1,9 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>truvity/ci-workflows"
   ],
+  "description": "Overrides beyond the shared preset: automerge, lockfile maintenance and vulnerability-alert defaults common to every repository built from this component template. Both packageRules entries document their own exceptions.",
   "osvVulnerabilityAlerts": true,
   "automerge": true,
   "automergeType": "pr",
