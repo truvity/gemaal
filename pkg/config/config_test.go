@@ -37,7 +37,7 @@ func TestLoadExample(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	cfg, err := config.Parse([]byte("{}"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
 	require.NoError(t, err)
 
 	assert.Equal(t, config.DefaultListen, cfg.Listen)
@@ -49,7 +49,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
-	cfg, err := config.Parse([]byte("{}"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
 	require.NoError(t, err)
 
 	ttl, keepUntil, executionID := cfg.Labels()
@@ -59,7 +59,7 @@ func TestLabels(t *testing.T) {
 }
 
 func TestLabelDomainConfigurable(t *testing.T) {
-	cfg, err := config.Parse([]byte("labelDomain: gemaal.example.com"))
+	cfg, err := config.Parse([]byte("labelDomain: gemaal.example.com\nawsRegion: eu-example-1"))
 	require.NoError(t, err)
 
 	ttl, _, _ := cfg.Labels()
@@ -115,7 +115,7 @@ tiers:
 }
 
 func TestNewDefaults(t *testing.T) {
-	cfg, err := config.Parse([]byte("{}"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
 	require.NoError(t, err)
 
 	assert.Equal(t, config.DefaultTierLabel, cfg.TierLabel)
@@ -132,6 +132,7 @@ func TestAuthzIssuerKeys(t *testing.T) {
 authz:
   issuerURL: https://access.example.com
   audience: gemaal
+awsRegion: eu-example-1
 `))
 	require.NoError(t, err)
 
@@ -139,26 +140,20 @@ authz:
 	assert.Equal(t, "gemaal", cfg.Authz.Audience)
 }
 
-// TestAWSRegionResolution pins the region ladder: document beats
-// AWS_REGION beats the built-in default. Explicit-with-a-default because
-// the deployment environment carries no region at all (EKS Pod Identity
-// injects only the credential-endpoint variables).
-func TestAWSRegionResolution(t *testing.T) {
-	t.Setenv("AWS_REGION", "")
-
-	cfg, err := config.Parse([]byte("{}"))
-	require.NoError(t, err)
-	assert.Equal(t, config.DefaultAWSRegion, cfg.AWSRegion)
-
+// TestAWSRegionRequired: the region is an estate fact, never a default.
+// AWS_REGION from the environment is not consulted either — EKS Pod
+// Identity never injects it, so leaning on the environment would leave
+// the same gap the explicit requirement exists to close.
+func TestAWSRegionRequired(t *testing.T) {
 	t.Setenv("AWS_REGION", "eu-west-1")
 
-	cfg, err = config.Parse([]byte("{}"))
-	require.NoError(t, err)
-	assert.Equal(t, "eu-west-1", cfg.AWSRegion)
+	_, err := config.Parse([]byte("{}"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "awsRegion")
 
-	cfg, err = config.Parse([]byte(`awsRegion: us-east-1`))
+	cfg, err := config.Parse([]byte(`awsRegion: us-east-1`))
 	require.NoError(t, err)
-	assert.Equal(t, "us-east-1", cfg.AWSRegion, "an explicit document region must beat the environment")
+	assert.Equal(t, "us-east-1", cfg.AWSRegion, "an explicit document region is used verbatim, never the environment")
 }
 
 func TestNonTestShapedBucketRefused(t *testing.T) {
@@ -176,6 +171,7 @@ func TestTestShapedBucketAccepted(t *testing.T) {
 allowList:
   s3Buckets:
     - truvity-devel-test
+awsRegion: eu-example-1
 `))
 	require.NoError(t, err)
 }

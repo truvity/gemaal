@@ -185,6 +185,7 @@ tiers:
 allowList:
   ssmRoots:
     - /test/
+awsRegion: eu-example-1
 `))
 	require.NoError(t, err)
 
