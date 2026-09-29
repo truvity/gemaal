@@ -76,7 +76,7 @@ release:
   header: |
     ## gemaal {{ .Tag }}
 
-    Docker image: `ghcr.io/truvity/gemaal:{{ .Version }}`
+    Docker image: `ghcr.io/truvity/gemaal/server:{{ .Version }}`
     Helm chart: `oci://ghcr.io/truvity/charts/gemaal:{{ .Version }}`
 
     ### Install
