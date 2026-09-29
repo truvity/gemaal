@@ -1,11 +1,5 @@
 # gemaal
 
-> **Early development.** The design, the proto surface, the client
-> library, the CLI and the service are in place; the service has not
-> yet seen a production deployment (that is G4, shadow mode first).
-> The client API is in real use (bar's url-shortener suite) but may
-> still change between 0.x minors without a compatibility shim.
-
 A *gemaal* is a Dutch pumping station — the machine that keeps a polder
 dry. Land below sea level does not stay dry because water is forbidden
 to enter; it stays dry because something never stops pumping it out.
@@ -21,13 +15,197 @@ delays cleanup — it never blocks anyone's loop.
 AI agents: start with **[AGENTS.md](AGENTS.md)** — the exhaustive gemaalctl
 command surface and the rules for documenting it.
 
-## Three faces
+## Who it is for
+
+A platform team running a shared, ephemeral-tenant test cluster —
+personal `emp-{slug}` namespaces and per-run CI namespaces alike — where
+installs happen constantly and nobody remembers to clean up. gemaal is
+the housekeeping loop and the client-side tooling around it; it is not
+an admission gate (nothing here blocks an install) and not a secrets or
+identity system (it consumes access-issuer-verified identity, it does
+not mint it). A team with no shared test cluster, or one where installs
+are already centrally orchestrated, has no use for this repository.
+
+## The model
+
+Three faces, one tenancy model:
 
 | Face | What it is |
 |---|---|
 | **`gemaal`** (service) | in-cluster watcher: TTL housekeeping over test tenants, ring-pair-aware teardown, orphaned-artifact sweeps, the six ConnectRPC RPCs (Plan / ListTenants / Checkout / Extend / Sweep / Resolve), and the web console |
 | **`gemaalctl`** (CLI) | `whoami` (the identity evidence chain + the resolved tenant), `install`/`uninstall` (client-side helm with the ledger labels stamped, ring-pair aware), ConnectRPC client for plan / checkout / extend, and the artifact pipeline |
 | **Go library** | what test harnesses import: `pkg/harness` (resolve the standing tenant, bracket the suite's build/deploy/setup/teardown phases, install helpers), `pkg/identity` (evidence drivers + slug resolution, incl. the interim kubectl-groups resolver), `pkg/gemaalcfg` (the committed `gemaal.yaml`) |
+
+The service re-derives the world from the cluster every tick
+(level-triggered, no store) and applies the garbage contract of
+[docs/design.md](docs/design.md):
+
+- **reach** — namespaces selected by the tier LABEL (`tierLabel:
+  tenancy.truvity.io/tier` by default), values keyed by the configured
+  `tiers`. No label, no existence: `gemaal-system` and every platform
+  namespace are structurally out of reach.
+- **release truth** — `helm list` per namespace (exec; no client-go, no
+  Helm SDK), releases grouped into ring pairs (`<rel>` + `<rel>-infra`),
+  the ledger read off the release Secrets.
+- **rules** — uniform TTL from last activity with `keep-until`
+  precedence; teardown is ring-ordered (app before infra); orphaned
+  `/test/<ns>/<rel>/` SSM subtrees are collected past grace. The S3
+  sweep is stubbed off pending the shared test bucket.
+- **shadow mode by default** — `dryRun: true` (the chart's `confirm:
+  false`): the loop and the Sweep RPC plan, report and delete nothing
+  until the deployer flips it deliberately.
+- **auth** — mutations authenticate via TokenReview against the k8s API
+  (workloads), falling back to a person's token verified against
+  access-issuer's keys with access-roster's identity package
+  (`authz.issuerURL`/`audience`); a token neither authority vouches for
+  is refused. Checkout/Extend are owner-or-admin, Sweep is admin-only.
+- **console** — the web console at `/` (Vite/React/MUI single-page app
+  over Connect-Web): Tenants (ages, tiers, ledger, pending actions,
+  Checkout/Extend/Decommission) and Sweeps (history). Browser sign-in is
+  gateway-owned (Envoy Gateway's `SecurityPolicy` OIDC filter, not a
+  proxy this repository runs); the console consumes the forwarded
+  identity and renders access-roster's `UserBadge`.
+
+## Install and a worked example
+
+```bash
+helm install gemaal oci://ghcr.io/truvity/charts/gemaal --version 0.24.3 \
+  --set confirm=false
+```
+
+Pin a real version — an OCI chart reference has no `@latest` tag to fall
+back to anyway, and a floating pin is exactly the drift this contract
+forbids. Deploy in shadow mode first (`confirm=false`, the chart
+default) and read the sweep records at `/sweeps` before granting
+deletion.
+
+Two values are the chart's own product surface, not an estate fact
+supplied by the deployer — they carry defaults because gemaal defines
+them, the way an API defines its own default port:
+
+- `config.identity.personalNamespace` (`emp-{slug}`) — the template a
+  resolved slug's standing namespace renders from.
+- `config.tierLabel` (`tenancy.truvity.io/tier`) — the namespace label
+  gemaal's own reach selector reads.
+
+Every other cluster-specific value — `config.awsRegion`, the tier TTLs,
+the allow-listed S3 buckets and SSM roots, the identity map — is
+**required, with no default**: an estate fact the deployer states
+explicitly. `config.awsRegion` in particular has no fallback to
+`AWS_REGION` from the environment either — EKS Pod Identity never
+injects it, so config load refuses to start rather than guess. See
+[config.example.yaml](config.example.yaml) for the full schema and
+[docs/adoption.md](docs/adoption.md) for install order and prerequisites.
+
+### The test harness
+
+A project's integration tests resolve their standing tenant once, in
+TestMain, and run inside it — the harness itself creates and deletes
+nothing (cleanup is the service's job, driven by the labels installs
+stamp). A real suite brackets `m.Run()` with phases, and `harness.Run`
+owns the bracket:
+
+```go
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		return // unit-only run
+	}
+
+	cfg, err := gemaalcfg.Load("gemaal.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	os.Exit(harness.Run(m, harness.Suite{
+		Options: harness.Options{
+			Kubecontext: "devel@oidc",
+			App:         "example-app",
+			Config:      cfg,
+		},
+
+		// Build the packaged charts through the repo-owned hook.
+		Build: func(ctx context.Context, _ *harness.Cluster, _ harness.Tenant) error {
+			return runHook(ctx, cfg.BuildHook("example-app"))
+		},
+
+		// Install the ring pair with the ledger stamped.
+		Deploy: func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
+			return c.InstallPair(ctx, t, harness.Pair{
+				InfraChart: infraTgz, AppChart: appTgz,
+				Labels: harness.Labels{ExecutionID: harness.DefaultExecutionID(time.Now())},
+			})
+		},
+
+		// Never skipped: a reused install still has to be ready.
+		Setup: []harness.Hook{func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
+			if err := c.WaitForDeployments(ctx, t.Namespace, t.Release, harness.InfraRelease(t.Release)); err != nil {
+				return err
+			}
+
+			url, err := c.ServiceURL(ctx, t.Namespace, t.Release+"-web", 8080)
+			if err != nil {
+				return err
+			}
+
+			return harness.WaitHTTPReady(ctx, url, time.Minute)
+		}},
+
+		// Interim, until the service's TTL housekeeping owns cleanup.
+		Teardown: []harness.Hook{func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
+			return c.UninstallPair(ctx, t)
+		}},
+	}))
+}
+```
+
+The full `GEMAAL_TEST_*` contract, the resolution ladders, and the kind
+tier for public repos without shared-cluster routing are in
+[docs/reference.md](docs/reference.md); running a suite in CI
+(one identity per phase, the teardown guarantee) is in
+[docs/harness-ci.md](docs/harness-ci.md).
+
+## Consumers
+
+| Consumer | Surface |
+|---|---|
+| `truvity/gitops` | the chart, Kargo-promoted |
+| `truvity/policy` | its example e2e harness, Go `harness` |
+
+## Neighbours
+
+- **ocictl ↔ gemaal**: gemaal's pipeline shells out to `helmctl`
+  (`go tool helmctl`, from `truvity/ocictl`) to package and push charts.
+
+## Documentation
+
+- [docs/adoption.md](docs/adoption.md): prerequisites, install order,
+  and the shadow-mode-first rollout
+- [docs/safety.md](docs/safety.md): every refusal — in `pkg/config` and
+  in the engine — and the failure it prevents
+- [docs/reference.md](docs/reference.md): the `gemaalctl` command
+  surface, the `GEMAAL_TEST_*` contract, and the resolution ladders
+- [docs/doctrine.md](docs/doctrine.md): what this repository owns and
+  what the consuming estate owns
+- [docs/design.md](docs/design.md): the tenancy model in full — label
+  ledger, uniform TTL, the garbage contract, driver families
+- [docs/harness-ci.md](docs/harness-ci.md): running a harness suite in
+  CI — identity per phase, the teardown guarantee, release-derived
+  chart values
+- [CHANGELOG.md](CHANGELOG.md): what changed for a consumer, per
+  version
+
+## The rule that makes this repository public
+
+**Mechanism only.** Nothing here names a real account, cluster, hostname
+or secret path — every such thing is a config input with no default
+(see [Install and a worked example](#install-and-a-worked-example)), and
+the deploying estate supplies it from its own (private) repository.
+`hack/leak-canary.sh` enforces this in CI, and public history cannot be
+unpublished — so the rule is mechanical, not remembered.
+
+This repository follows the shared [component
+contract](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
 
 ## Status
 
@@ -36,225 +214,11 @@ command surface and the rules for documenting it.
 | G1 | scaffold: design doc, `proto/gemaal/v1`, service + CLI skeletons | ✅ |
 | G2 | identity drivers + standing-tenant harness + `gemaal.yaml` + gemaalctl proper | ✅ |
 | G3 | service v1: housekeeping loop, real RPCs, auth, web console, helm chart | ✅ |
-| G4 | service image + chart publishing, first deployment (shadow mode first) | ⏳ |
+| G4 | service image + chart publishing | ✅ |
 
-## The service
-
-The service is the pump: a `gocron` loop that, every tick, re-derives
-the world from the cluster (level-triggered, no store) and applies the
-garbage contract of [docs/design.md](docs/design.md):
-
-- **reach** — namespaces selected by the tier LABEL
-  (`tierLabel: tenancy.truvity.io/tier` by default), values keyed by
-  the configured `tiers`. No label, no existence: `gemaal-system` and
-  every platform namespace are structurally out of reach.
-- **release truth** — `helm list` per namespace (exec; no client-go, no
-  Helm SDK — the service sees exactly what an operator sees), releases
-  grouped into ring pairs (`<rel>` + `<rel>-infra`), the ledger read
-  off the release Secrets.
-- **rules** — uniform TTL from last activity (tenant `ttl` label, else
-  tier default) with `keep-until` precedence; teardown is ring-ordered
-  (app before infra); orphaned `/test/<ns>/<rel>/` SSM subtrees are
-  collected past grace. The S3 sweep is stubbed off pending the shared
-  test bucket — a configured bucket shows up in every plan as a
-  problem, on purpose.
-- **shadow mode by default** — `dryRun: true` (the chart's
-  `confirm: false`): the loop and the Sweep RPC plan, report and
-  delete nothing until the deployer flips it deliberately. Every sweep
-  leaves structured deletion records (log + in-memory history for the
-  console).
-- **auth** — mutations authenticate via TokenReview against the k8s API
-  (workloads) falling back to the gateway-forwarded OIDC JWT (humans);
-  Checkout/Extend are owner-or-admin (the `emp:{slug}` group or the
-  resolved email must render to the target namespace), Sweep is
-  admin-only. `Resolve` answers from the deployer-rendered email→slug
-  map.
-- **console** — the web console at `/` (Vite/React/MUI single-page app
-  over Connect-Web — a console behind access-roster, see
-  [access-roster/docs/connect/console-app.md](https://github.com/truvity/access-roster/blob/master/docs/connect/console-app.md)):
-  Tenants (ages, tiers, ledger, pending actions, Checkout/Extend/
-  Decommission) and Sweeps (history, expandable per-action outcomes).
-  CSP-hardened, embedded in the binary; browser login belongs to the
-  console's access-proxy, the header renders the shared
-  `@truvity/access-roster/react` UserBadge, and every action goes
-  through the same authenticated RPCs gemaalctl uses — no second
-  authorization path.
-
-The helm chart lives in [charts/gemaal](charts/gemaal): namespace-agnostic,
-service account for pod identity, config from values (tier TTLs,
-allow-list, identity map, `confirm`), watcher RBAC split from the
-off-by-default sweep RBAC. The service image must carry `helm` and
-`kubectl` binaries next to the `gemaal` binary (the exec boundary is
-deliberate); the image build ships with G4.
-
-## The test harness
-
-A project's integration tests resolve their standing tenant once, in
-TestMain, and run inside it — the harness itself creates and deletes
-nothing (cleanup is the service's job, driven by the labels installs
-stamp). A real suite brackets `m.Run()` with phases, and `harness.Run`
-owns the bracket — resolution, the `GEMAAL_*` export, skip-flag
-semantics, signal handling, teardown-even-on-partial-install:
-
-```go
-func TestMain(m *testing.M) {
-    flag.Parse()
-    if testing.Short() {
-        return // unit-only run
-    }
-
-    cfg, err := gemaalcfg.Load("gemaal.yaml")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    os.Exit(harness.Run(m, harness.Suite{
-        Options: harness.Options{
-            Kubecontext: "devel@oidc",
-            App:         "url-shortener",
-            Config:      cfg,
-        },
-
-        // Build the packaged charts through the repo-owned hook.
-        Build: func(ctx context.Context, _ *harness.Cluster, _ harness.Tenant) error {
-            return runHook(ctx, cfg.BuildHook("url-shortener"))
-        },
-
-        // Install the ring pair with the ledger stamped.
-        Deploy: func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
-            return c.InstallPair(ctx, t, harness.Pair{
-                InfraChart: infraTgz, AppChart: appTgz,
-                Labels: harness.Labels{ExecutionID: harness.DefaultExecutionID(time.Now())},
-            })
-        },
-
-        // Never skipped: a reused install still has to be ready.
-        Setup: []harness.Hook{func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
-            if err := c.WaitForDeployments(ctx, t.Namespace, t.Release, harness.InfraRelease(t.Release)); err != nil {
-                return err
-            }
-
-            url, err := c.ServiceURL(ctx, t.Namespace, t.Release+"-web", 8080)
-            if err != nil {
-                return err
-            }
-
-            return harness.WaitHTTPReady(ctx, url, time.Minute)
-        }},
-
-        // Interim, until the service's TTL housekeeping owns cleanup.
-        Teardown: []harness.Hook{func(ctx context.Context, c *harness.Cluster, t harness.Tenant) error {
-            return c.UninstallPair(ctx, t)
-        }},
-    }))
-}
-```
-
-The operator's dials are the `GEMAAL_TEST_*` contract (strict booleans —
-a set-but-unparseable value refuses the run instead of silently
-destroying what it was told to keep):
-
-| Variable | Effect |
-|---|---|
-| `GEMAAL_TEST_SKIP_BUILD` | skip `Build`; use the artifacts already lying around |
-| `GEMAAL_TEST_SKIP_DEPLOY` | skip `Build` and `Deploy`; reuse the standing releases as installed |
-| `GEMAAL_TEST_SKIP_DESTROY` / `GEMAAL_TEST_KEEP` | skip `Teardown`; keep the releases after the run |
-
-Running a suite in CI — one identity per phase, the teardown
-guarantee, release-derived values: [docs/harness-ci.md](docs/harness-ci.md).
-
-Resolution ladders (each rung explicit, first hit wins):
-
-- **namespace**: `Options.Namespace` → `GEMAAL_NAMESPACE` → identity
-  chain (`GEMAAL_EMAIL` → `kubectl auth whoami` → AWS SSO session) →
-  email → slug → the `personalNamespace` template (`emp-{slug}`)
-- **release**: `Options.Release` → `GEMAAL_RELEASE` →
-  CI (`r{run}-a{attempt}`) → `Options.App`
-- **slug**: `Options.Resolver` → the `gemaal.yaml` identity map → the
-  interim kubectl-groups resolver (the `emp:{slug}` group in the
-  caller's own cluster token — no committed people data; the service's
-  Resolve RPC stays the end state)
-
-The resolved pair is exported as `GEMAAL_NAMESPACE` / `GEMAAL_RELEASE` /
-`GEMAAL_KUBECONTEXT`. Installs go through `harness.Cluster`: helm ≥ 3.13
-`--labels` stamping (`gemaal.io/{ttl,keep-until,execution-id}`),
-ring-pair ordering (`<rel>-infra` installs first, uninstalls last),
-rollout waits and Service ClusterIP resolution.
-`harness.TierForNamespace` derives the client-side tier from the
-namespace-name convention (`emp-` → employee, `ci-` → ci) for charts
-that want it as a value. `gemaal.example.yaml` documents the committed
-per-repo configuration.
-
-### The kind tier
-
-Public repositories run the same suite against a disposable
-[kind](https://kind.sigs.k8s.io/) cluster on a CI runner or a laptop,
-where the shared cluster's service CIDR either is not routed or (Docker
-Desktop on macOS) cannot be routed to at all. The suite code is
-identical on both tiers; only the harness decides how to reach things,
-via `harness.DetectTier` — a DIFFERENT axis from `TierForNamespace`'s
-namespace-name convention, answering "which kind of cluster is this
-run talking to" rather than classifying a name:
-
-- **Detection**: `GEMAAL_TIER=kind` (explicit — what CI sets), or,
-  failing that, a `Cluster.Kubecontext` named `kind-*` (kind's own
-  convention). `Cluster.Tier` overrides both when a caller sets it
-  directly.
-- **Namespace**: fixed or configurable, same as every other tier —
-  set `Options.Namespace` or `GEMAAL_NAMESPACE`, which already skip
-  identity resolution entirely; a disposable cluster needs no personal
-  namespace derived from a caller's identity.
-- **`ServiceURL`** opens a `kubectl port-forward` straight to the Pod
-  behind the Service (never to `svc/…`, which would leave the chosen
-  Pod invisible) and returns `http://127.0.0.1:<local port>` instead of
-  dialing the ClusterIP directly. The call site is unchanged from the
-  shared tier. The forward is tracked on the `*Cluster` and stopped by
-  `(*Cluster).CloseForwards` — call it from your own `t.Cleanup`, or
-  let `harness.Run` close it automatically after `m.Run()` when using
-  the `Suite`/`TestMain` pattern above. `(*Cluster).ForwardFor` looks up
-  an open forward's Pod name, for enriching a later request failure
-  (`PortForward.Err`) — a pod restart mid-test then reads as exactly
-  that, not a bare service bug.
-- **`harness.DeployApp`** installs RING 3 ALONE — no ring2 pair — for
-  the kind tier's lane, where the project's own infrastructure chart is
-  never installed; a fixture substitutes for it. Mirrors
-  `harness.DeployInfra`'s ring2-alone counterpart on the other ring.
-- **Leases** (tenant claims) are unchanged: they are `coordination.k8s.io`
-  API objects reached the same way as every other kubectl call in this
-  package, with no dependency on service-CIDR routing — no TTL
-  housekeeping is assumed on a disposable cluster, but claiming still
-  protects a shared kind cluster against two concurrent suites.
-
-## AWS access
-
-The service uses the AWS SDK default credential chain — the chart takes
-no side in how credentials arrive. Two equivalent setups:
-
-- **EKS Pod Identity** (the Truvity estate default): create a
-  pod-identity association binding the role to the ServiceAccount's
-  exact `(namespace, name)` pair, and pin `serviceAccount.name` so the
-  pair holds. The agent injects only the credential endpoint — never
-  `AWS_REGION` — which is why the chart carries `config.awsRegion` as a
-  first-class value (fallback: `config` → `AWS_REGION` env →
-  `eu-central-1`).
-- **IRSA**: set `serviceAccount.annotations` to
-  `eks.amazonaws.com/role-arn: <role-arn>` and trust the cluster's OIDC
-  provider account-side. On non-EKS clusters, the
-  [truvity/amazon-eks-pod-identity-webhook](https://github.com/truvity/amazon-eks-pod-identity-webhook)
-  fork provides the same projection.
-
-The chart's NetworkPolicy admits both paths explicitly: STS rides the
-general 443 egress (the whole IRSA credential path), and the
-link-local pod-identity agent (`169.254.170.23:80`) is allowed for PIA
-and simply idle under IRSA.
-
-## Design
-
-The tenancy model — tenant identity, tier labels, the
-`gemaal.io/{ttl,keep-until,execution-id}` label ledger, uniform TTL, the
-garbage contract, the driver families, and the safety rails — lives in
-[docs/design.md](docs/design.md). Read that first; the code is its
-shadow.
+`ghcr.io/truvity/gemaal/server` and `oci://ghcr.io/truvity/charts/gemaal`
+publish on every tag; see [Releases](https://github.com/truvity/gemaal/releases)
+for the current version.
 
 ## Development
 
@@ -262,11 +226,24 @@ Toolchain via [devbox](https://www.jetify.com/devbox/) (+ direnv), tasks
 via [just](https://just.systems/):
 
 ```bash
-just check      # build + test + lint + vuln — what CI runs
+just check      # build + test + lint + chart-lint + vuln + leak-canary — what CI runs
 just generate   # regenerate gen/ from proto/ (buf; output is committed)
 just run        # run the service skeleton against config.example.yaml
 ```
 
-## License
+## Releasing
+
+Push a tag `vX.Y.Z`. The shared release workflow (`truvity/ci-workflows`
+`release-public.yaml`) builds and publishes the `gemaal`/`gemaalctl`
+binaries, the service image (`ghcr.io/truvity/gemaal/server`, via `ko`)
+and the chart (`oci://ghcr.io/truvity/charts/gemaal`), all stamped from
+the tag.
+
+Auto-release is armed (`vars.AUTO_RELEASE=true`): a merged pull request
+labelled `security` releases immediately, and Monday's cron cuts a patch
+for whatever renovate bumped in the meantime. Minors and majors are
+still cut by hand, tagged after their CHANGELOG heading lands.
+
+## Licence
 
 [MIT](LICENSE)
