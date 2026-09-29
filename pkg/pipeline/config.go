@@ -177,9 +177,9 @@ type Hints struct {
 	Stable   string `yaml:"stable"`
 }
 
-// Config is one project's pipeline configuration. Bar's url-shortener is
-// one instance of it (see pipeline.example.yaml); nothing in the flows
-// is hardcoded to any project.
+// Config is one project's pipeline configuration. url-shortener is one
+// instance of it (see pipeline.example.yaml); nothing in the flows is
+// hardcoded to any project.
 type Config struct {
 	// Project names the release unit: the goreleaser monorepo prefix, the
 	// image repo path (<registry>/<project>) and most defaults below.

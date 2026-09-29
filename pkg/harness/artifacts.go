@@ -16,9 +16,9 @@ import (
 )
 
 // This file is the repo-agnostic half of a project's integration
-// TestMain: the pieces url-shortener wrote locally (bar
-// url-shortener/tests/harness_test.go) and every next adopter was about
-// to copy verbatim. The VALUES file stays with the project — each
+// TestMain: the pieces url-shortener (an internal consumer repo) wrote
+// locally (its own tests/harness_test.go) and every next adopter was
+// about to copy verbatim. The VALUES file stays with the project — each
 // chart's values contract is its own — but locating packaged charts,
 // running the committed build hook, and the ring-pair install glue are
 // identical across repos by construction, so they live here once.

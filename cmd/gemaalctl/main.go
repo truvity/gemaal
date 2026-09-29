@@ -7,7 +7,7 @@
 //     on the client, which is exactly the point.
 //   - plan / checkout / extend: ConnectRPC clients of the gemaal service.
 //   - pipeline (snapshot, push-preview, release-stable): the promoted
-//     form of bar's url-shortener release scripts — see pkg/pipeline.
+//     form of url-shortener's release scripts — see pkg/pipeline.
 package main
 
 import (

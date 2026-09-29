@@ -19,7 +19,7 @@ const DefaultGroupPrefix = "emp:"
 // RPC — the end state, and the authority this resolver stands in for.
 // It plugs the Resolver seam the RPC client will later fill; retirement
 // is staged (swap the implementation, callers stay put), never silent.
-// Promoted from bar#488's harness, where the pattern proved out.
+// Promoted from an early adopter's harness, where the pattern proved out.
 //
 // CI never reaches it by construction: CI sets GEMAAL_NAMESPACE, which
 // wins the namespace ladder before any resolver is consulted.
