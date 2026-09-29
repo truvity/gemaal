@@ -1,11 +1,11 @@
 # gemaalctl pipeline — example per-project configuration (one project
 # per file, passed via --config / GEMAAL_PIPELINE_CONFIG).
 #
-# This instance is bar's url-shortener: the values mirror the release
-# scripts the pipeline commands were ported from
-# (bar/url-shortener/scripts/release-env.sh and friends). Nothing in the
-# flows is hardcoded to it — point the fields at any project that builds
-# a ring pair, plus any number of charts that carry no ring semantics.
+# This instance is url-shortener, an internal consumer repo: the values
+# mirror the release scripts the pipeline commands were ported from
+# (its scripts/release-env.sh and friends). Nothing in the flows is
+# hardcoded to it — point the fields at any project that builds a ring
+# pair, plus any number of charts that carry no ring semantics.
 #
 # There are exactly two destinations, and each has exactly one
 # entrypoint: `pipeline snapshot` + `pipeline push-preview` build and
@@ -29,7 +29,7 @@ goreleaserConfig: url-shortener/.goreleaser.yaml
 tagPrefix: url-shortener/
 releaseBranch: master
 
-awsRegion: eu-central-1
+awsRegion: eu-example-1
 
 # Profiles are the LAPTOP face. CI sets GEMAAL_AWS_AMBIENT=1 and the
 # pipeline drops them entirely (no AWS_PROFILE, no --profile), letting
@@ -37,10 +37,10 @@ awsRegion: eu-central-1
 # an explicit --profile would make the AWS CLI ignore env credentials.
 registries:
   preview:
-    registry: 677224894277.dkr.ecr.eu-central-1.amazonaws.com
+    registry: 123456789012.dkr.ecr.eu-example-1.amazonaws.com
     profile: preview@power
   stable:
-    registry: 721506300184.dkr.ecr.eu-central-1.amazonaws.com
+    registry: 123456789013.dkr.ecr.eu-example-1.amazonaws.com
     profile: stable@power
 
 charts:

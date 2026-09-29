@@ -1,11 +1,11 @@
 // Package pipeline holds the gemaalctl artifact pipeline: the dev-loop
 // snapshot build, the preview chart push, and the gated stable release.
 //
-// The flows are a Go port of bar's url-shortener release scripts
-// (url-shortener/scripts/{release-env,charts-lock,charts-select,
-// artifacts-snapshot,charts-push,release-stable}.sh — eight review
-// rounds on bar#487 made those scripts the spec). Every hardening in
-// them survives the port:
+// The flows are a Go port of url-shortener's (an internal consumer
+// repo's) release scripts (its scripts/{release-env,charts-lock,
+// charts-select,artifacts-snapshot,charts-push,release-stable}.sh —
+// several review rounds made those scripts the spec). Every hardening
+// in them survives the port:
 //
 //   - Two destinations, one entrypoint each: snapshot and push-preview
 //     are wired to the preview registry, release-stable to the stable

@@ -13,7 +13,7 @@ personalNamespace: emp-{slug}
 clusters:
   devel@oidc:
     values:
-      region: eu-central-1
+      region: eu-example-1
       accountID: "123456789012"
 
 # Repo-owned commands gemaalctl runs (install --build) but never

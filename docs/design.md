@@ -280,8 +280,8 @@ opaque to the tooling — organization semantics live in the charts.
 Charts reading `.Values.gemaal` is a **consumer-side migration**, not
 something the tooling can force: a chart whose values contract predates
 gemaal keeps it, and the suite maps the cluster values onto that
-contract by hand (bar does exactly this today — friction #3 of the
-adoption feedback, accepted for now). The client-side tier helper
+contract by hand (an early adopter does exactly this today — accepted
+for now). The client-side tier helper
 (`TierForNamespace`: `emp-` → employee, `ci-` → ci, else unknown)
 exists for the same reason — it is the one rule such mapping code kept
 re-implementing. It is a client convenience only: on the service side

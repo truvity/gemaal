@@ -1,7 +1,8 @@
 // Package engine is the housekeeping engine: the pump itself.
 //
-// It is the port of bar's janitor prototype (bar#486, pkg/janitor)
-// adapted to the label-ledger model of docs/design.md. What carried
+// It is the port of an internal consumer repo's janitor prototype
+// (its own pkg/janitor) adapted to the label-ledger model of
+// docs/design.md. What carried
 // over: the plan/apply split (a Plan is inert; Apply is the only thing
 // that acts on one), exec-based helm/kubectl ports (no client-go), the
 // orphan-plus-grace artifact rule, the failure policy (release truth is

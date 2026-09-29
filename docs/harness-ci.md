@@ -1,10 +1,10 @@
 # Running a harness suite in CI
 
 What `pkg/harness` deliberately does NOT decide for you, learned the
-expensive way by its first two adopters (bar's url-shortener/eudi
-suites, core's dms suite — see their Integration workflows for living
-reference). The library brackets Build → Deploy → Setup → tests →
-Teardown; everything below is the caller's side of the contract.
+expensive way by its first adopters' own CI suites — see their
+Integration workflows for living reference. The library brackets
+Build → Deploy → Setup → tests → Teardown; everything below is the
+caller's side of the contract.
 
 ## One identity per phase
 
@@ -37,8 +37,9 @@ poisoning the build.
 ## The teardown guarantee is yours, not the library's
 
 `Suite.Teardown` runs after `m.Run()` returns. A TestMain body that
-calls `os.Exit` on failure — go-core's `maincommon.Main` does — skips
-it **by construction**. Locally that is the standing-tenant model
+calls `os.Exit` on failure — a shared internal `main`-wrapping helper
+one adopter's suites use does exactly this — skips it **by
+construction**. Locally that is the standing-tenant model
 working as intended (a kept pair is upgraded in place by the next run).
 In CI it is a leak: pair per red run, CNPG cluster included.
 
@@ -63,8 +64,8 @@ defaults can only ever match one release name:
 A standing release named after the app masks the omission; the first
 per-run CI release (`{app}-r{run}-a{attempt}`) finds it. A chart-side
 guard that fails the render with the expected value in the message
-(core's `pg-guard.yaml`) turns that from a debugging session into a
-one-line fix.
+(a `pg-guard.yaml`-shaped values assertion) turns that from a debugging
+session into a one-line fix.
 
 ## The lease is a feature
 

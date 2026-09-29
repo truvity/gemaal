@@ -3,10 +3,10 @@
 #
 # The hand-rolled copy this replaces was one of NINE identical ones
 # across the public estate, and the shared workflow it now calls had sat
-# in ci-workflows with zero callers. That gap is not theoretical: bar's
-# release workflows drifted out of sync with the tool they invoked and
-# nobody noticed until a tag was cut months later, because release
-# machinery is exercised only by a tag.
+# in ci-workflows with zero callers. That gap is not theoretical: an
+# internal repo's release workflows drifted out of sync with the tool
+# they invoked and nobody noticed until a tag was cut months later,
+# because release machinery is exercised only by a tag.
 #
 # The caller must grant the permissions below — a reusable workflow can
 # narrow them but never widen them, which is also why the private (ECR)

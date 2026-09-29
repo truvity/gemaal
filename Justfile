@@ -25,6 +25,11 @@ lint:
 vuln:
     govulncheck ./...
 
+# Scan tracked files for committed particulars (account ids, ARNs, ECR
+# hosts, internal hostnames, secret paths, tokens) — see the script.
+leak-canary:
+    ./hack/leak-canary.sh
+
 # Regenerate gen/ from proto/ (buf + protoc-gen-go + protoc-gen-connect-go,
 # all from devbox). Generated code is COMMITTED so the module is
 # `go get`-able without buf installed.
@@ -54,7 +59,7 @@ chart-lint:
         --set exposure.hostname=gemaal.example.com >/dev/null
     ! helm template gemaal charts/gemaal --set bogusKey=1 >/dev/null 2>&1
 
-check: build test lint chart-lint vuln
+check: build test lint chart-lint vuln leak-canary
 
 # Build a snapshot release locally (no push, no tag)
 snapshot:
