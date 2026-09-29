@@ -3,6 +3,13 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## v0.25.0
+
+- **Breaking for callers of `pkg/config`:** the AWS region is required and no longer defaults to `eu-central-1`.
+- Leak hygiene: real account IDs and private repository names removed from examples and comments; `hack/leak-canary.sh` runs in `just check`.
+- README rewritten in the component contract's heading order with `Consumers` and `Neighbours`; stale claims about image and chart publishing and the console's proxy removed; `docs/` gains adoption, doctrine, reference and safety pages; CHANGELOG per tag.
+- `github.com/truvity/access-roster` bumped to v1.39.1.
+
 ## v0.24.3
 - `(*Cluster).WaitForDeploymentsAtVersion`: `WaitForDeployments`
   (`kubectl rollout status`) proves a Deployment finished rolling out, but
