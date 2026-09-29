@@ -110,6 +110,7 @@ authz:
 hold:
   default: 8h
   max: 72h
+awsRegion: eu-example-1
 `))
 	require.NoError(t, err)
 

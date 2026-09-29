@@ -78,12 +78,13 @@ confirm: false
 # The service configuration document (config.example.yaml documents the
 # schema). Rendered verbatim into the ConfigMap under the dryRun line.
 config:
-  # AWS SDK region. First-class because the deployment cannot lean on
-  # the environment: EKS Pod Identity injects only the credential
-  # endpoint, never AWS_REGION (IRSA's webhook does inject it, and then
-  # this value simply agrees or overrides). The service falls back
-  # config → AWS_REGION → eu-central-1.
-  awsRegion: eu-central-1
+  # AWS SDK region. REQUIRED, no default here or in the service: an
+  # estate fact, not this chart's to guess. EKS Pod Identity injects
+  # only the credential endpoint, never AWS_REGION (IRSA's webhook does
+  # inject it, and then this value simply agrees or overrides) — the
+  # deployment's values file must set this explicitly, or the service
+  # refuses to start.
+  awsRegion: ""
   labelDomain: gemaal.io
   housekeepingInterval: 1m
   grace: 48h
