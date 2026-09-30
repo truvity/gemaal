@@ -26,10 +26,10 @@ grace: 48h
 # configuration, which is the normal deployment.
 kubecontext: ""
 
-# The namespace label whose VALUE selects the tier. A namespace without
+# REQUIRED, no default. The namespace label whose VALUE selects the tier. A namespace without
 # it does not exist as far as gemaal is concerned — which is exactly how
 # gemaal-system and every platform namespace stay out of reach.
-tierLabel: tenancy.truvity.io/tier
+tierLabel: example.com/tier
 
 # Tier defaults, keyed by the tier label VALUE. A tenant without an
 # explicit ttl label inherits its tier's default. Tiers differ only in

@@ -54,15 +54,22 @@ clean:
 chart-lint:
     #!/usr/bin/env bash
     set -euo pipefail
-    helm lint charts/gemaal
-    diff -u tests/golden/gemaal/default.yaml <(helm template gemaal charts/gemaal)
+    helm lint charts/gemaal --set config.tierLabel=example.com/tier
+    diff -u tests/golden/gemaal/default.yaml <(helm template gemaal charts/gemaal \
+        --set config.tierLabel=example.com/tier)
     diff -u tests/golden/gemaal/full.yaml <(helm template gemaal charts/gemaal \
+        --set config.tierLabel=example.com/tier \
         --set confirm=true \
         --set rbac.sweep.enabled=true \
         --set exposure.enabled=true \
         --set exposure.hostname=gemaal.example.com)
+    # config.tierLabel has no default: the chart as shipped must not render.
+    if helm template gemaal charts/gemaal >/dev/null 2>&1; then
+        echo "ERROR: gemaal rendered without config.tierLabel" >&2
+        exit 1
+    fi
     for fixture in tests/invalid/gemaal/*; do
-        if helm template gemaal charts/gemaal --values "$fixture" >/dev/null 2>&1; then
+        if helm template gemaal charts/gemaal --values <(printf "config:\n  tierLabel: example.com/tier\n") --values "$fixture" >/dev/null 2>&1; then
             echo "ERROR: gemaal accepted $fixture — values.schema.json not enforced" >&2
             exit 1
         fi
@@ -70,8 +77,10 @@ chart-lint:
 
 # Regenerate the golden renders under tests/golden/gemaal/ — review the diff.
 golden:
-    helm template gemaal charts/gemaal >tests/golden/gemaal/default.yaml
     helm template gemaal charts/gemaal \
+        --set config.tierLabel=example.com/tier >tests/golden/gemaal/default.yaml
+    helm template gemaal charts/gemaal \
+        --set config.tierLabel=example.com/tier \
         --set confirm=true \
         --set rbac.sweep.enabled=true \
         --set exposure.enabled=true \

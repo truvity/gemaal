@@ -37,7 +37,7 @@ func TestLoadExample(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 
 	assert.Equal(t, config.DefaultListen, cfg.Listen)
@@ -48,8 +48,14 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, config.DefaultGrace, cfg.Grace.Std())
 }
 
+func TestTierLabelRequired(t *testing.T) {
+	_, err := config.Parse([]byte("awsRegion: eu-example-1"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tierLabel is required")
+}
+
 func TestLabels(t *testing.T) {
-	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 
 	ttl, keepUntil, executionID := cfg.Labels()
@@ -59,7 +65,7 @@ func TestLabels(t *testing.T) {
 }
 
 func TestLabelDomainConfigurable(t *testing.T) {
-	cfg, err := config.Parse([]byte("labelDomain: gemaal.example.com\nawsRegion: eu-example-1"))
+	cfg, err := config.Parse([]byte("labelDomain: gemaal.example.com\nawsRegion: eu-example-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 
 	ttl, _, _ := cfg.Labels()
@@ -68,6 +74,7 @@ func TestLabelDomainConfigurable(t *testing.T) {
 
 func TestSecretsRootRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 allowList:
   ssmRoots:
     - /secrets/prod/
@@ -80,6 +87,7 @@ allowList:
 // /secrets rule is checked before, and independently of, the shape rule.
 func TestSecretsUnderTestRootRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 allowList:
   ssmRoots:
     - /test/secrets/
@@ -90,6 +98,7 @@ allowList:
 
 func TestNonTestShapedRootRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 allowList:
   ssmRoots:
     - /roster/
@@ -107,6 +116,7 @@ func TestUnknownFieldRefused(t *testing.T) {
 
 func TestNonPositiveTierTTLRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 tiers:
   ci: {}
 `))
@@ -115,10 +125,10 @@ tiers:
 }
 
 func TestNewDefaults(t *testing.T) {
-	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 
-	assert.Equal(t, config.DefaultTierLabel, cfg.TierLabel)
+	assert.Equal(t, "example.com/tier", cfg.TierLabel)
 	assert.Equal(t, config.DefaultPersonalNamespace, cfg.Identity.PersonalNamespace)
 	assert.Equal(t, config.DefaultGroupPrefix, cfg.Authz.GroupPrefix)
 	assert.Equal(t, config.DefaultHoldDefault, cfg.Hold.Default.Std())
@@ -129,6 +139,7 @@ func TestNewDefaults(t *testing.T) {
 // The issuer keys parse.
 func TestAuthzIssuerKeys(t *testing.T) {
 	cfg, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 authz:
   issuerURL: https://access.example.com
   audience: gemaal
@@ -147,17 +158,18 @@ awsRegion: eu-example-1
 func TestAWSRegionRequired(t *testing.T) {
 	t.Setenv("AWS_REGION", "eu-west-1")
 
-	_, err := config.Parse([]byte("{}"))
+	_, err := config.Parse([]byte("tierLabel: example.com/tier"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "awsRegion")
 
-	cfg, err := config.Parse([]byte(`awsRegion: us-east-1`))
+	cfg, err := config.Parse([]byte("awsRegion: us-east-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 	assert.Equal(t, "us-east-1", cfg.AWSRegion, "an explicit document region is used verbatim, never the environment")
 }
 
 func TestNonTestShapedBucketRefused(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 allowList:
   s3Buckets:
     - truvity-prod-data
@@ -168,6 +180,7 @@ allowList:
 
 func TestTestShapedBucketAccepted(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 allowList:
   s3Buckets:
     - truvity-devel-test
@@ -178,6 +191,7 @@ awsRegion: eu-example-1
 
 func TestPersonalNamespaceNeedsSlug(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 identity:
   personalNamespace: emp-static
 `))
@@ -187,6 +201,7 @@ identity:
 
 func TestIdentityMapValidated(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 identity:
   emails:
     not-an-email: jdoe
@@ -195,6 +210,7 @@ identity:
 	assert.Contains(t, err.Error(), "not an email")
 
 	_, err = config.Parse([]byte(`
+tierLabel: example.com/tier
 identity:
   emails:
     j.doe@example.com: "Not A Slug"
@@ -205,6 +221,7 @@ identity:
 
 func TestHoldBoundsValidated(t *testing.T) {
 	_, err := config.Parse([]byte(`
+tierLabel: example.com/tier
 hold:
   default: 48h
   max: 8h

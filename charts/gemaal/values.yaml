@@ -88,7 +88,11 @@ config:
   labelDomain: gemaal.io
   housekeepingInterval: 1m
   grace: 48h
-  tierLabel: tenancy.truvity.io/tier
+  # Namespace label KEY whose value selects the tier. REQUIRED, no
+  # default: which label an estate uses is its own convention. The
+  # schema refuses an empty or malformed key, and the service refuses to
+  # start without one (e.g. example.com/tier).
+  tierLabel: ""
   # Tier defaults, keyed by the tier label VALUE. Deployment values
   # override with the real numbers.
   tiers:

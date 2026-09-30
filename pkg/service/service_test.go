@@ -111,6 +111,7 @@ hold:
   default: 8h
   max: 72h
 awsRegion: eu-example-1
+tierLabel: example.com/tier
 `))
 	require.NoError(t, err)
 

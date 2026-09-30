@@ -80,7 +80,7 @@ func (emptyKeeper) Decommission(context.Context, string, string, bool) (*engine.
 func startStubServer(t *testing.T) string {
 	t.Helper()
 
-	cfg, err := config.Parse([]byte("awsRegion: eu-example-1"))
+	cfg, err := config.Parse([]byte("awsRegion: eu-example-1\ntierLabel: example.com/tier"))
 	require.NoError(t, err)
 
 	svc := service.New(service.Deps{

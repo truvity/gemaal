@@ -41,7 +41,7 @@ The service re-derives the world from the cluster every tick
 [docs/design.md](docs/design.md):
 
 - **reach** — namespaces selected by the tier LABEL (`tierLabel:
-  tenancy.truvity.io/tier` by default), values keyed by the configured
+  example.com/tier`, required, no default), values keyed by the configured
   `tiers`. No label, no existence: `gemaal-system` and every platform
   namespace are structurally out of reach.
 - **release truth** — `helm list` per namespace (exec; no client-go, no
@@ -85,7 +85,7 @@ them, the way an API defines its own default port:
 
 - `config.identity.personalNamespace` (`emp-{slug}`) — the template a
   resolved slug's standing namespace renders from.
-- `config.tierLabel` (`tenancy.truvity.io/tier`) — the namespace label
+- `config.tierLabel` (required, e.g. `example.com/tier`) — the namespace label
   gemaal's own reach selector reads.
 
 Every other cluster-specific value — `config.awsRegion`, the tier TTLs,

@@ -70,6 +70,15 @@
     "confirm": { "type": "boolean" },
     "config": {
       "type": "object",
+      "required": ["tierLabel"],
+      "properties": {
+        "tierLabel": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$",
+          "description": "Namespace label key whose value selects the tier. Required: no default."
+        }
+      },
       "description": "The service configuration document, rendered verbatim — see config.example.yaml. Keep it free of a dryRun key: that line is rendered from `confirm`."
     }
   }
