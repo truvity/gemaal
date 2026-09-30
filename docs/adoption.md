@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - **Kubernetes:** a cluster with a tier-label convention already in use
-  on the namespaces gemaal should watch (`tenancy.truvity.io/tier` by
-  default — see [safety.md](safety.md#tier-label-containment)), Helm 3
+  on the namespaces gemaal should watch (the key is
+  `config.tierLabel`, required — see [safety.md](safety.md#tier-label-containment)), Helm 3
   with OCI registry support, and `kubectl`/`helm` reachable from the
   cluster the service runs in (the image ships both binaries next to
   `gemaal` for exactly this — see [reference.md](reference.md)).
@@ -68,19 +68,31 @@ simply idle under IRSA.
 
 ## Defaults that are gemaal's own product surface
 
-Two chart values carry a default even though every other cluster-
-specific value is required. They are not an estate fact this repository
-guessed at — they are gemaal's own API surface, the way a library ships
+One chart value carries a default even though every other cluster-
+specific value is required. It is not an estate fact this repository
+guessed at — it is gemaal's own API surface, the way a library ships
 a default port:
 
 - `config.identity.personalNamespace` (`emp-{slug}`): the template a
   resolved slug's standing namespace renders from. Change it only if the
   deployment's namespace-naming convention differs.
-- `config.tierLabel` (`tenancy.truvity.io/tier`): the label key gemaal's
-  own reach selector reads. Change it only if the deployment's tier
-  labelling convention differs.
+
+`config.tierLabel` (for example `example.com/tier`) is required, with no
+default: which namespace label an estate uses to tier its namespaces is
+that estate's convention. The chart schema refuses an empty or malformed
+key and the service refuses to start without one.
 
 Every other cluster-specific value — the AWS region, the tier TTLs, the
 allow-listed buckets and roots, the identity map — is required, with no
 default. See [safety.md](safety.md#config-load-pkgconfig) for what an
 omitted one refuses.
+
+## Upgrading to a release with a required tier label
+
+Earlier releases defaulted `config.tierLabel` to an organisation-specific
+key. That default is gone. Before bumping the chart or image pin, set
+`config.tierLabel` in the deployment's values to the label key the
+cluster's namespaces already carry (the value the old default resolved to,
+if the deployment never set one). Setting it first is harmless on the old
+release, which already accepts the key, so the bump itself changes
+nothing. A render without it fails schema validation.

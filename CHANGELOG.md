@@ -3,6 +3,14 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## Unreleased
+
+- **Breaking:** `config.tierLabel` is required and no longer defaults to an
+  organisation-specific label. The chart schema refuses an empty or malformed
+  key, `pkg/config` drops `DefaultTierLabel`, and the service refuses to start
+  without one. Set it explicitly before upgrading; see
+  [docs/adoption.md](docs/adoption.md#upgrading-to-a-release-with-a-required-tier-label).
+
 ## v0.25.0
 
 - **Breaking for callers of `pkg/config`:** the AWS region is required and no longer defaults to `eu-central-1`.

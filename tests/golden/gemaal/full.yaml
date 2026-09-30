@@ -97,7 +97,7 @@ data:
       emails: {}
       personalNamespace: emp-{slug}
     labelDomain: gemaal.io
-    tierLabel: tenancy.truvity.io/tier
+    tierLabel: example.com/tier
     tiers:
       ci:
         ttl: 24h
@@ -261,7 +261,7 @@ spec:
         app.kubernetes.io/name: gemaal
         app.kubernetes.io/instance: gemaal
       annotations:
-        checksum/config: fd4adef25e8e743305fcc56602676d8458e746bb3ebdd0f0eb3910de496104e7
+        checksum/config: 1eadab7b1b4f04ef0392ca6a69650910ab73614d6ca0605efe3a4e16032a56ca
     spec:
       serviceAccountName: gemaal
       securityContext:

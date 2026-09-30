@@ -186,6 +186,7 @@ allowList:
   ssmRoots:
     - /test/
 awsRegion: eu-example-1
+tierLabel: example.com/tier
 `))
 	require.NoError(t, err)
 

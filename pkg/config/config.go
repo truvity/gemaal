@@ -26,7 +26,6 @@ const (
 	DefaultLabelDomain          = "gemaal.io"
 	DefaultHousekeepingInterval = time.Minute
 	DefaultGrace                = 48 * time.Hour
-	DefaultTierLabel            = "tenancy.truvity.io/tier"
 	DefaultPersonalNamespace    = "emp-{slug}"
 	DefaultGroupPrefix          = "emp:"
 	DefaultHoldDefault          = 8 * time.Hour
@@ -155,7 +154,7 @@ type Config struct {
 	// (in-cluster) configuration — the normal deployment.
 	Kubecontext string `yaml:"kubecontext"`
 	// TierLabel is the namespace label whose VALUE selects the tier;
-	// DefaultTierLabel when empty. A namespace without it does not exist
+	// REQUIRED, no default: an estate's own convention. A namespace without it does not exist
 	// as far as gemaal is concerned.
 	TierLabel string          `yaml:"tierLabel"`
 	Tiers     map[string]Tier `yaml:"tiers"`
@@ -227,10 +226,6 @@ func (c *Config) applyDefaults() {
 		c.Grace = Duration(DefaultGrace)
 	}
 
-	if c.TierLabel == "" {
-		c.TierLabel = DefaultTierLabel
-	}
-
 	if c.Identity.PersonalNamespace == "" {
 		c.Identity.PersonalNamespace = DefaultPersonalNamespace
 	}
@@ -253,7 +248,11 @@ func (c *Config) validate() error {
 		return fmt.Errorf("labelDomain %q: must be a bare domain without leading/trailing dots", c.LabelDomain)
 	}
 
-	if strings.TrimSpace(c.TierLabel) != c.TierLabel || c.TierLabel == "" {
+	if c.TierLabel == "" {
+		return fmt.Errorf("tierLabel is required: set the namespace label key whose value selects the tier (for example example.com/tier); there is no default")
+	}
+
+	if strings.TrimSpace(c.TierLabel) != c.TierLabel {
 		return fmt.Errorf("tierLabel %q: must be a non-empty label key", c.TierLabel)
 	}
 
