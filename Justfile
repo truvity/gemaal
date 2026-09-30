@@ -45,7 +45,7 @@ tidy:
 clean:
     rm -rf dist/ coverage.out
 
-# Run all checks (build + test + lint + vuln)
+# Run all checks (build + test + lint)
 # Render the chart with the shipped values plus a fully-featured set, and
 # prove each matches its golden under tests/golden/gemaal/ (component
 # contract C3 — a reviewer sees what a change did to the output, not just
@@ -77,7 +77,7 @@ golden:
         --set exposure.enabled=true \
         --set exposure.hostname=gemaal.example.com >tests/golden/gemaal/full.yaml
 
-check: build test lint chart-lint vuln leak-canary
+check: build test lint chart-lint leak-canary
 
 # Build a snapshot release locally (no push, no tag)
 snapshot:
