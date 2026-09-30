@@ -395,7 +395,7 @@ func (p *Pipeline) stableGates(ctx context.Context) (string, error) {
 	}
 
 	// Gate e: CI provenance. The release job exists (every private
-	// project's release.yaml, on the stable tier since INF-640), so the
+	// project's release.yaml, on the stable tier), so the
 	// laptop path is break-glass: it still works, and it says so. On
 	// GitHub Actions the gate records the provenance instead — the
 	// warning used to print there too, word for word (dms v0.37.2).
