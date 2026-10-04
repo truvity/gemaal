@@ -11,7 +11,7 @@ import (
 )
 
 // consoleDist is the built SPA (Vite/React/MUI — a console behind
-// access-roster; access-roster/docs/connect/console-app.md) rooted at its
+// access-roster; sluis/docs/connect/console-app.md) rooted at its
 // dist/ directory.
 var consoleDist, _ = fs.Sub(frontend.Assets, "dist")
 

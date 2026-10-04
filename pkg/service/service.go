@@ -20,7 +20,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	accessidentity "github.com/truvity/access-roster/identity"
+	accessidentity "github.com/truvity/sluis/identity"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 

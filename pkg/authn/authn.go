@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/truvity/access-roster/identity"
+	"github.com/truvity/sluis/identity"
 )
 
 // Method says which authority answered for the identity.

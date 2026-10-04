@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/truvity/access-roster/identity"
+	"github.com/truvity/sluis/identity"
 
 	"github.com/truvity/gemaal/pkg/authn"
 )
