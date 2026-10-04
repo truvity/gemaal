@@ -1,5 +1,5 @@
 // Package frontend embeds the built web console (Vite/React/MUI — a console
-// behind access-roster; see access-roster/docs/connect/console-app.md).
+// behind sluis; see sluis/docs/connect/console-app.md).
 // dist/ is committed so `go build` needs no Node toolchain.
 package frontend
 

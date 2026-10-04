@@ -17,7 +17,7 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/urfave/cli/v3"
 
-	"github.com/truvity/access-roster/identity"
+	"github.com/truvity/sluis/identity"
 
 	"github.com/truvity/gemaal/pkg/authn"
 	"github.com/truvity/gemaal/pkg/config"

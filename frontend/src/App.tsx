@@ -6,7 +6,7 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import { UserBadge } from "@truvity/access-roster/react";
+import { UserBadge } from "@truvity/sluis/react";
 import { fetchMe, fetchVersion } from "./api";
 import { useAsync } from "./hooks";
 import { TenantsView } from "./TenantsView";

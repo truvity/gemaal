@@ -1,5 +1,5 @@
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import type { Identity } from "@truvity/access-roster";
+import type { Identity } from "@truvity/sluis";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type { Duration, Timestamp } from "@bufbuild/protobuf/wkt";
 import { GemaalService, ActionKind } from "./gen/gemaal/v1/gemaal_pb.js";
