@@ -9,11 +9,11 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.6
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.79.0
 	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/gofrs/flock v0.13.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/sluis v1.57.1
+	github.com/truvity/sluis v1.59.0
 	github.com/urfave/cli/v3 v3.11.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sync v0.23.0
