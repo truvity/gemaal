@@ -2,7 +2,7 @@ module github.com/truvity/gemaal
 
 go 1.27.0
 
-toolchain go1.27.1
+toolchain go1.27.2
 
 require (
 	connectrpc.com/connect v1.20.0
@@ -16,7 +16,7 @@ require (
 	github.com/truvity/sluis v1.73.0
 	github.com/urfave/cli/v3 v3.11.0
 	go.yaml.in/yaml/v3 v3.0.5
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -55,7 +55,8 @@ require (
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
