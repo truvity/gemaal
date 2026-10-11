@@ -3,6 +3,11 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## Unreleased
+
+- **Behaviour change:** `snapshot` builds (`dockers_v2` images and `kos`) no longer attest an SBOM by default; only release-stable does. An entry that sets `sbom` explicitly (other than `none`) still gets one in a snapshot. `sbom: none` disables it everywhere.
+- `pkg/pipeline`: the SBOM scanner image of the stable `dockers_v2` builds is configurable. `GEMAAL_SBOM_GENERATOR` (or `sbomGenerator` in the pipeline config; the env wins) makes each build pass `--attest type=sbom,generator=<image>` instead of `--sbom=true`, so the scanner (`docker/buildkit-syft-scanner`) can come from a pull-through cache instead of Docker Hub. Unset keeps `--sbom=true`.
+
 ## v0.25.2
 
 - Dependency updates.
