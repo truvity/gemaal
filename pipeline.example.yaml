@@ -31,6 +31,13 @@ releaseBranch: master
 
 awsRegion: eu-example-1
 
+# Optional: the scanner image that produces each dockers_v2 image's SBOM
+# attestation in release-stable (snapshots attest nothing by default) (`--attest type=sbom,generator=<image>`). Unset, buildx pulls
+# its default (docker/buildkit-syft-scanner) from Docker Hub; set it to a
+# mirror or pull-through cache of that image to avoid the upstream rate
+# limit. GEMAAL_SBOM_GENERATOR overrides it.
+# sbomGenerator: registry.example.com/docker-hub/docker/buildkit-syft-scanner:stable-1
+
 # Profiles are the LAPTOP face. CI sets GEMAAL_AWS_AMBIENT=1 and the
 # pipeline drops them entirely (no AWS_PROFILE, no --profile), letting
 # the default credential chain resolve the runner's ambient identity —

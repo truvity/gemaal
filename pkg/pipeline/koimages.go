@@ -200,8 +200,12 @@ func (p *Pipeline) publishKoImage(
 		args = append(args, "--bare")
 	}
 
-	if k.SBOM != "" {
+	switch {
+	case k.SBOM != "":
 		args = append(args, "--sbom", k.SBOM)
+	case data.IsSnapshot:
+		// Snapshots carry no SBOM unless the entry asks (see planImage).
+		args = append(args, "--sbom", "none")
 	}
 
 	for _, l := range sortedPairs(k.Labels) {

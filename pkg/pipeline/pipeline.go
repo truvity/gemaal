@@ -71,6 +71,13 @@ type Pipeline struct {
 	// pipeline.yaml to ambient without a config fork (GEMAAL_* env
 	// always wins — gemaal.yaml doctrine).
 	ambient bool
+	// sbomGenerator is the scanner image buildx runs to produce the SBOM
+	// attestation (`--attest type=sbom,generator=<image>`). Empty keeps
+	// buildx's default (docker/buildkit-syft-scanner from Docker Hub).
+	// Set it to a mirror or a pull-through cache of that image so a build
+	// never pulls the scanner from a rate-limited upstream. The
+	// GEMAAL_SBOM_GENERATOR env wins over the config's sbomGenerator.
+	sbomGenerator string
 }
 
 // New wires a Pipeline. runner executes every external command; stderr
@@ -82,7 +89,12 @@ func New(cfg *Config, runner Runner, log *slog.Logger, stderr io.Writer) *Pipeli
 		ambient = true
 	}
 
-	return &Pipeline{cfg: cfg, runner: runner, log: log, stderr: stderr, ambient: ambient}
+	generator := strings.TrimSpace(os.Getenv("GEMAAL_SBOM_GENERATOR"))
+	if generator == "" {
+		generator = strings.TrimSpace(cfg.SBOMGenerator)
+	}
+
+	return &Pipeline{cfg: cfg, runner: runner, log: log, stderr: stderr, ambient: ambient, sbomGenerator: generator}
 }
 
 // errf writes operator-facing prose to stderr, mirroring the scripts'

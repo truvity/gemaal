@@ -205,6 +205,11 @@ type Config struct {
 	// ReleaseBranch is the only branch stable releases cut from. Default: master.
 	ReleaseBranch string `yaml:"releaseBranch"`
 
+	// SBOMGenerator is the scanner image for the SBOM attestation of every
+	// dockers_v2 image (`--attest type=sbom,generator=<image>`). Empty keeps
+	// buildx's default scanner. GEMAAL_SBOM_GENERATOR overrides it.
+	SBOMGenerator string `yaml:"sbomGenerator"`
+
 	AWSRegion  string     `yaml:"awsRegion"`
 	Registries Registries `yaml:"registries"`
 	Charts     Charts     `yaml:"charts"`
