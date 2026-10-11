@@ -5,6 +5,10 @@ notes](https://github.com/truvity/gemaal/releases) and the git history.
 
 ## Unreleased
 
+## v0.26.1
+
+- Dependency updates.
+
 ## v0.26.0
 
 - **Behaviour change:** `snapshot` builds (`dockers_v2` images and `kos`) no longer attest an SBOM by default; only release-stable does. An entry that sets `sbom` explicitly (other than `none`) still gets one in a snapshot. `sbom: none` disables it everywhere.
