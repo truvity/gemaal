@@ -316,10 +316,10 @@ func TestPublishImagesSBOMGenerator(t *testing.T) {
 		snapshot bool
 	}{
 		"snapshot attests nothing, whatever the generator": {env: generator, snapshot: true},
-		"unset keeps the buildx default": {want: "--sbom=true"},
-		"env":                            {env: generator, want: "--attest type=sbom,generator=" + generator},
-		"config":                         {cfg: generator, want: "--attest type=sbom,generator=" + generator},
-		"env wins over config":           {env: generator, cfg: "other.example.com/scanner:1", want: "--attest type=sbom,generator=" + generator},
+		"unset keeps the buildx default":                   {want: "--sbom=true"},
+		"env":                                              {env: generator, want: "--attest type=sbom,generator=" + generator},
+		"config":                                           {cfg: generator, want: "--attest type=sbom,generator=" + generator},
+		"env wins over config":                             {env: generator, cfg: "other.example.com/scanner:1", want: "--attest type=sbom,generator=" + generator},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("GEMAAL_SBOM_GENERATOR", tc.env)
