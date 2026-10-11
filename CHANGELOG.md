@@ -3,6 +3,10 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## v0.25.2
+
+- Dependency updates.
+
 ## v0.25.1
 
 - **Breaking:** `config.tierLabel` is required and no longer defaults to an
