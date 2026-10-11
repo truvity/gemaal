@@ -216,6 +216,17 @@ func (p *Pipeline) planImage(d *dockerV2, data templateData, projectDir string) 
 	}, nil
 }
 
+// sbomArgs is the buildx SBOM flag: the shorthand with buildx's default
+// scanner image, or the explicit attestation naming the configured
+// generator. The two forms are mutually exclusive in buildx.
+func sbomArgs(generator string) []string {
+	if generator == "" {
+		return []string{"--sbom=true"}
+	}
+
+	return []string{"--attest", "type=sbom,generator=" + generator}
+}
+
 func renderMap(data templateData, m map[string]string) ([]string, error) {
 	out := make([]string, 0, len(m))
 	for k, v := range m {
@@ -388,7 +399,7 @@ func (p *Pipeline) buildPlatforms(ctx context.Context, env []string, plan *image
 				args = append(args, "--label", kv)
 			}
 			if plan.sbom {
-				args = append(args, "--sbom=true")
+				args = append(args, sbomArgs(p.sbomGenerator)...)
 			}
 			args = append(args, plan.flags...)
 			args = append(args, plan.context)

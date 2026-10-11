@@ -299,3 +299,57 @@ func TestPublishImagesReadsDigestFromAttestationIndex(t *testing.T) {
 	assert.Contains(t, inspect, "--raw")
 	assert.NotContains(t, inspect, "--format")
 }
+
+func TestSBOMArgs(t *testing.T) {
+	assert.Equal(t, []string{"--sbom=true"}, sbomArgs(""))
+	assert.Equal(t,
+		[]string{"--attest", "type=sbom,generator=cache.example.com/docker-hub/docker/buildkit-syft-scanner:stable-1"},
+		sbomArgs("cache.example.com/docker-hub/docker/buildkit-syft-scanner:stable-1"))
+}
+
+func TestPublishImagesSBOMGenerator(t *testing.T) {
+	const generator = "cache.example.com/docker-hub/docker/buildkit-syft-scanner:stable-1"
+
+	for name, tc := range map[string]struct {
+		env, cfg string
+		want     string
+	}{
+		"unset keeps the buildx default": {want: "--sbom=true"},
+		"env":                            {env: generator, want: "--attest type=sbom,generator=" + generator},
+		"config":                         {cfg: generator, want: "--attest type=sbom,generator=" + generator},
+		"env wins over config":           {env: generator, cfg: "other.example.com/scanner:1", want: "--attest type=sbom,generator=" + generator},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("GEMAAL_SBOM_GENERATOR", tc.env)
+
+			cfg := testConfig(t)
+			cfg.SBOMGenerator = tc.cfg
+
+			p, s, root, _ := newPipelineFor(t, cfg)
+			require.NoError(t, p.resolveRoot(context.Background()))
+			seedImageProject(t, root, "1.2.3")
+			// The shared fixture turns the SBOM off; this test wants it on.
+			gy := filepath.Join(root, "url-shortener", ".goreleaser.yaml")
+			raw, err := os.ReadFile(gy)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(gy, []byte(strings.Replace(string(raw), "    sbom: none\n", "", 1)), 0o644))
+			stubImagePublish(s)
+
+			_, err = p.publishImages(context.Background(), []string{"REGISTRY=reg"}, false)
+			require.NoError(t, err)
+
+			var builds int
+			for _, c := range s.joinedCalls() {
+				if !strings.HasPrefix(c, "docker buildx build") {
+					continue
+				}
+				builds++
+				assert.Contains(t, c, tc.want)
+				if tc.want != "--sbom=true" {
+					assert.NotContains(t, c, "--sbom")
+				}
+			}
+			assert.Equal(t, 2, builds)
+		})
+	}
+}

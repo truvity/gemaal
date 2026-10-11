@@ -3,6 +3,10 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## Unreleased
+
+- `pkg/pipeline`: the SBOM scanner image of the `dockers_v2` image builds is configurable. `GEMAAL_SBOM_GENERATOR` (or `sbomGenerator` in the pipeline config; the env wins) makes each build pass `--attest type=sbom,generator=<image>` instead of `--sbom=true`, so a build can pull `docker/buildkit-syft-scanner` through a registry mirror or pull-through cache instead of Docker Hub. Unset keeps today's behaviour.
+
 ## v0.25.1
 
 - **Breaking:** `config.tierLabel` is required and no longer defaults to an
