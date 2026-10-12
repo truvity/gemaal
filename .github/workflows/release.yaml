@@ -34,7 +34,7 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@b38472fac2bff567c7b138654cebc7da485170ca # v3.26.1
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@a523f2f6e5868b00362056569c667243631fd90f # v3.26.2
     with:
       charts: '["gemaal"]'
       # Nest the image under the repo namespace:
