@@ -14,6 +14,8 @@ build: fmt
 # Run unit tests
 test:
     go test ./... -coverprofile=coverage.out
+    # The Pulumi packages under deploy/pulumi are each their own Go module.
+    for m in deploy/pulumi/*/; do (cd "$m" && test -z "$(gofmt -l .)" && go vet ./... && go test -count=1 ./...); done
 
 # Run linters. `config verify` first: `run` accepts unknown top-level keys
 # silently, so a settings block in the wrong place is otherwise invisible.

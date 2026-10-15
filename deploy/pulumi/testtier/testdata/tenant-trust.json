@@ -1,0 +1,1 @@
+{"Statement":[{"Action":["sts:AssumeRole","sts:TagSession"],"Condition":{"ArnEquals":{"aws:SourceArn":"arn:PARTITION:eks:eu-central-1:123456789012:cluster/alpha"},"StringEquals":{"aws:SourceAccount":"123456789012"},"StringLike":{"aws:RequestTag/kubernetes-namespace":["emp-*","ci-*"]}},"Effect":"Allow","Principal":{"Service":"pods.eks.amazonaws.com"}}],"Version":"2012-10-17"}
