@@ -23,7 +23,7 @@ project: url-shortener
 awsRegion: eu-central-1
 registries:
   preview: {registry: preview.example.com, profile: preview@power}
-  stable: {registry: stable.example.com, profile: stable@power}
+  stable: {registry: stable.example.com, profile: stable@role-power}
 charts:
   ring2:
     name: url-shortener-infra
@@ -47,7 +47,7 @@ project: url-shortener
 awsRegion: eu-central-1
 registries:
   preview: {registry: preview.example.com, profile: preview@power}
-  stable: {registry: stable.example.com, profile: stable@power}
+  stable: {registry: stable.example.com, profile: stable@role-power}
 charts:
   ring2:
     name: url-shortener-infra
