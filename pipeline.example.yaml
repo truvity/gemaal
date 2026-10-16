@@ -48,7 +48,7 @@ registries:
     profile: preview@power
   stable:
     registry: 123456789013.dkr.ecr.eu-example-1.amazonaws.com
-    profile: stable@power
+    profile: stable@role-power
 
 charts:
   # OCI repository per chart: <repositoryPrefix>/<name>.
