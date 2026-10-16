@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@c1478a8032d4e7d3141bc47768dbee7b3cee8c6b # v3.28.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@8ab8774ba50e3668dcb5a07ad40ec900866ae140 # v3.33.0
     with:
       # Required: the component contract (C1-C13) is judged, shown in the
       # job summary, and fails this job when a rule fails.
