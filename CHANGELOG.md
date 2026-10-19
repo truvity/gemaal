@@ -3,7 +3,7 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
-## Unreleased
+## v0.26.2
 
 - `deploy/pulumi/testtier` (new Go module, `github.com/truvity/gemaal/deploy/pulumi/testtier`): the AWS side of a test tier as Pulumi. The namespace-confined tenant identities for the shared test bucket and the shared SDK test key (`DeployTenantS3`, `DeployTenantKMS`), the SDK test key and its grants (`DeploySDKTestKey`, `SDKTestStatements`, `DeploySDKAssumeTarget`), and the sweep identity gemaal runs with (`DeploySweepIdentity`). Account, region, bucket, tenant namespace patterns and the immutable policy descriptions are inputs; `Estate.Options` is the hook an existing estate uses to keep its aliases and URNs. Additive, nothing existing changes; versioned by its own `deploy/pulumi/testtier/vX.Y.Z` tags.
 
