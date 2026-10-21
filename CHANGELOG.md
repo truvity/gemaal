@@ -3,6 +3,10 @@
 One heading per release; full detail lives in the [release
 notes](https://github.com/truvity/gemaal/releases) and the git history.
 
+## v0.26.4
+
+- Dependency updates.
+
 ## v0.26.3
 
 - Dependency updates.
