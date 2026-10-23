@@ -13,7 +13,7 @@ require (
 	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/gofrs/flock v0.13.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/sluis v1.77.1
+	github.com/truvity/sluis v1.77.2
 	github.com/urfave/cli/v3 v3.11.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sync v0.24.0
@@ -36,7 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.3 // indirect
 	github.com/aws/smithy-go v1.28.5 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.2 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-chi/chi/v5 v5.3.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
@@ -49,7 +49,7 @@ require (
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/cors v1.11.1 // indirect
-	github.com/zitadel/oidc/v3 v3.51.13 // indirect
+	github.com/zitadel/oidc/v3 v3.51.16 // indirect
 	github.com/zitadel/schema v1.3.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
