@@ -34,7 +34,7 @@ permissions:
 jobs:
   tag:
     if: vars.AUTO_RELEASE == 'true' && vars.ACCESS_ROSTER_ISSUER != ''
-    uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@f0f75f715a4feef8ab1e4e6222e84708bb32f6cd # v5.5.0
+    uses: truvity/ci-workflows/.github/workflows/auto-release.yaml@cde15d963ff2fadebf262680f565fc82c9bbc14b # v5.6.2
     with:
       token-source: access-roster
       access-roster-issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
