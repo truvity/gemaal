@@ -36,7 +36,7 @@ func stubStableBuild(t *testing.T, s *stubRunner, root string, cfg *Config) {
 
 	stubGatesPass(s)
 	stubBuildEffects(t, s, root, cfg, "goreleaser release --clean --skip=docker -f url-shortener/.goreleaser.yaml", "1.2.3")
-	s.on("aws ecr get-login-password --profile stable@power --region eu-central-1", stubResult{out: "sekret\n"})
+	s.on("aws ecr get-login-password --profile stable@role-power --region eu-central-1", stubResult{out: "sekret\n"})
 }
 
 // TestStableGatesFailFast is the table over gates a–d: each one
@@ -202,7 +202,7 @@ func TestStableHappyPath(t *testing.T) {
 	// Stable-wired environment.
 	env := s.call(t, "goreleaser release --clean").Env
 	assert.Contains(t, env, "REGISTRY=stable.example.com")
-	assert.Contains(t, env, "AWS_PROFILE=stable@power")
+	assert.Contains(t, env, "AWS_PROFILE=stable@role-power")
 	assert.Contains(t, env, "KO_DOCKER_REPO=stable.example.com/url-shortener")
 
 	// Publish order: login, then ring2, then ring3 (the commit point).
