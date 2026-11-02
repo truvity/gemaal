@@ -14,6 +14,11 @@ import (
 // pushes are how test charts get shared. No knobs — preview is
 // hardwired.
 //
+// Each push passes --allow-overwrite to helmctl (ocictl >= 0.11, which
+// otherwise refuses a tag that holds different content): the preview
+// version is keyed by the commit, and a rebuilt chart at the same commit
+// replaces the earlier one. Release pushes never pass it.
+//
 // Stable charts are NEVER pushed here: the stable release is one gated
 // flow (ReleaseStable) that builds and pushes in the same run. This flow
 // refuses a stable-stamped charts directory accordingly — the ring3
@@ -110,17 +115,17 @@ func (p *Pipeline) PushPreview(ctx context.Context) error {
 	// version should be missing once it lands. The pushes are not one
 	// transaction: if a later one fails, the earlier ones stay published
 	// at that version — re-running republishes the same coherent set.
-	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version); err != nil {
+	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version, true); err != nil {
 		return err
 	}
 
 	for _, ch := range sel.Extra {
-		if err := p.pushChart(ctx, env, dest, ch.Name, ch.Tgz, sel.Version); err != nil {
+		if err := p.pushChart(ctx, env, dest, ch.Name, ch.Tgz, sel.Version, true); err != nil {
 			return err
 		}
 	}
 
-	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version); err != nil {
+	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version, true); err != nil {
 		return err
 	}
 

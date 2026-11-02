@@ -47,6 +47,13 @@ func TestPushPreviewHappyPath(t *testing.T) {
 	assert.Equal(t, "url-shortener-infra", argOf(pushes[0], "--name"))
 	assert.Equal(t, "1.2.3", argOf(pushes[0], "--version"))
 
+	// A dev-loop snapshot version is keyed by the commit, so a rebuilt chart
+	// at the same commit must replace the earlier one (ocictl >= 0.11
+	// refuses by default).
+	for _, push := range pushes {
+		assert.Contains(t, push.Argv, "--allow-overwrite", "preview pushes replace the tag")
+	}
+
 	for _, push := range pushes {
 		tgz := argOf(push, "--tgz")
 		require.NotEmpty(t, tgz)

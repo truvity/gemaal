@@ -446,8 +446,12 @@ func (p *Pipeline) ecrLogin(ctx context.Context, env []string, dest Destination)
 	return p.runner.Run(ctx, Command{Argv: argv, Dir: p.root, Env: env, Stdin: strings.NewReader(password)})
 }
 
-// pushChart publishes one staged tarball via helmctl push.
-func (p *Pipeline) pushChart(ctx context.Context, env []string, dest Destination, name, tgz, version string) error {
+// pushChart publishes one staged tarball via helmctl push. allowOverwrite
+// adds --allow-overwrite (ocictl >= 0.11): only the preview push sets it,
+// because a dev-loop snapshot version is keyed by the commit and a rebuilt
+// chart at the same commit must replace the earlier one. A release push
+// never sets it; its registry is immutable and a collision must fail.
+func (p *Pipeline) pushChart(ctx context.Context, env []string, dest Destination, name, tgz, version string, allowOverwrite bool) error {
 	args := []string{
 		"push",
 		"--tgz", tgz,
@@ -459,6 +463,10 @@ func (p *Pipeline) pushChart(ctx context.Context, env []string, dest Destination
 		"--name", name,
 		"--version", version,
 	)
+
+	if allowOverwrite {
+		args = append(args, "--allow-overwrite")
+	}
 
 	return p.run(ctx, env, p.cfg.Commands.Helmctl, args...)
 }
