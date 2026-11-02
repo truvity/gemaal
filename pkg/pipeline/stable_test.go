@@ -222,6 +222,12 @@ func TestStableHappyPath(t *testing.T) {
 	assert.Contains(t, pushes[1], "--repository url-shortener/charts/url-shortener ")
 	assert.Less(t, login, s.find("go tool helmctl push"))
 
+	// A release push never replaces a tag: its registry is immutable and a
+	// collision must fail, not overwrite.
+	for _, push := range pushes {
+		assert.NotContains(t, push, "--allow-overwrite")
+	}
+
 	// The build stamped `stable`.
 	stamp, err := os.ReadFile(filepath.Join(root, "dist", "url-shortener", "charts", stampFileName))
 	require.NoError(t, err)

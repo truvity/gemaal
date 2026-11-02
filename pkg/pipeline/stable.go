@@ -249,7 +249,7 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	// Each push carries the same started/confirmed split as goreleaser.
 	st.startedRing2 = true
 
-	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version); err != nil {
+	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring2.Name, sel.InfraTgz, sel.Version, false); err != nil {
 		return err
 	}
 
@@ -258,7 +258,7 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 	for i := range st.extras {
 		st.extras[i].started = true
 
-		if err := p.pushChart(ctx, env, dest, st.extras[i].name, st.extras[i].tgz, sel.Version); err != nil {
+		if err := p.pushChart(ctx, env, dest, st.extras[i].name, st.extras[i].tgz, sel.Version, false); err != nil {
 			return err
 		}
 
@@ -267,7 +267,7 @@ func (p *Pipeline) ReleaseStable(ctx context.Context) (err error) {
 
 	st.startedRing3 = true
 
-	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version); err != nil {
+	if err := p.pushChart(ctx, env, dest, p.cfg.Charts.Ring3.Name, sel.AppTgz, sel.Version, false); err != nil {
 		return err
 	}
 
