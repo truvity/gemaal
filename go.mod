@@ -13,7 +13,7 @@ require (
 	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/gofrs/flock v0.13.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/sluis v1.79.4
+	github.com/truvity/sluis v1.80.0
 	github.com/urfave/cli/v3 v3.14.0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sync v0.24.0
@@ -38,7 +38,7 @@ require (
 	github.com/aws/smithy-go v1.28.5 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/go-chi/chi/v5 v5.3.2 // indirect
+	github.com/go-chi/chi/v5 v5.4.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
