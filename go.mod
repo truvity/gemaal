@@ -13,9 +13,9 @@ require (
 	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/gofrs/flock v0.13.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/sluis v1.80.4
+	github.com/truvity/sluis v1.81.0
 	github.com/urfave/cli/v3 v3.14.0
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/sync v0.24.0
 	google.golang.org/protobuf v1.36.12
 )
