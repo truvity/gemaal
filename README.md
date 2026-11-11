@@ -175,7 +175,10 @@ shadow mode first, and supplies the estate facts the chart leaves
 without a default: the tier label, the AWS region, the tier TTLs, the
 allow-listed buckets and SSM roots, the identity map. Flipping
 `confirm` to `true` together with the sweep RBAC is the admin's
-decision. See [docs/adoption.md](docs/adoption.md) and
+decision. The Go module `deploy/pulumi/testtier` is the AWS side, for a
+Pulumi stack the admin runs: the tenant and SDK test identities and the
+identity the service sweeps with. See
+[docs/adoption.md](docs/adoption.md) and
 [docs/doctrine.md](docs/doctrine.md).
 
 **Company part.** A company's SRE writes the committed `gemaal.yaml`
@@ -190,7 +193,7 @@ sweeps what those installs leave behind. See
 
 | Consumer | Surface |
 |---|---|
-| the maintainers' platform repository | the chart, deployed by Argo CD |
+| the maintainers' platform repository | the chart, deployed by Argo CD; Go module `deploy/pulumi/testtier` |
 | `truvity/sluis` | Go `pkg/harness`, in the end-to-end suite of its `audit` module |
 
 ## Neighbours
