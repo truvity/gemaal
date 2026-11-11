@@ -22,9 +22,10 @@ personal `emp-{slug}` namespaces and per-run CI namespaces alike — where
 installs happen constantly and nobody remembers to clean up. gemaal is
 the housekeeping loop and the client-side tooling around it; it is not
 an admission gate (nothing here blocks an install) and not a secrets or
-identity system (it consumes access-issuer-verified identity, it does
-not mint it). A team with no shared test cluster, or one where installs
-are already centrally orchestrated, has no use for this repository.
+identity system (it consumes identity verified by the identity issuer,
+sluis, and does not mint it). A team with no shared test cluster, or one
+where installs are already centrally orchestrated, has no use for this
+repository.
 
 ## The model
 
@@ -49,14 +50,15 @@ The service re-derives the world from the cluster every tick
   the ledger read off the release Secrets.
 - **rules** — uniform TTL from last activity with `keep-until`
   precedence; teardown is ring-ordered (app before infra); orphaned
-  `/test/<ns>/<rel>/` SSM subtrees are collected past grace. The S3
-  sweep is stubbed off pending the shared test bucket.
+  `/test/<ns>/<rel>/` SSM subtrees are collected past grace, and so are
+  orphaned artifacts in the allow-listed test S3 buckets
+  (`allowList.s3Buckets`).
 - **shadow mode by default** — `dryRun: true` (the chart's `confirm:
   false`): the loop and the Sweep RPC plan, report and delete nothing
   until the deployer flips it deliberately.
 - **auth** — mutations authenticate via TokenReview against the k8s API
   (workloads), falling back to a person's token verified against
-  access-issuer's keys with access-roster's identity package
+  the identity issuer's (sluis) keys with sluis's identity package
   (`authz.issuerURL`/`audience`); a token neither authority vouches for
   is refused. Checkout/Extend are owner-or-admin, Sweep is admin-only.
 - **console** — the web console at `/` (Vite/React/MUI single-page app
@@ -64,12 +66,12 @@ The service re-derives the world from the cluster every tick
   Checkout/Extend/Decommission) and Sweeps (history). Browser sign-in is
   gateway-owned (Envoy Gateway's `SecurityPolicy` OIDC filter, not a
   proxy this repository runs); the console consumes the forwarded
-  identity and renders access-roster's `UserBadge`.
+  identity and renders sluis's `UserBadge`.
 
 ## Install and a worked example
 
 ```bash
-helm install gemaal oci://ghcr.io/truvity/charts/gemaal --version 0.24.3 \
+helm install gemaal oci://ghcr.io/truvity/charts/gemaal --version 0.26.7 \
   --set confirm=false
 ```
 
@@ -165,12 +167,34 @@ tier for public repos without shared-cluster routing are in
 (one identity per phase, the teardown guarantee) is in
 [docs/harness-ci.md](docs/harness-ci.md).
 
+## Platform part and company part
+
+**Platform part.** The platform admin applies the `gemaal` chart
+(`oci://ghcr.io/truvity/charts/gemaal`) to the shared test cluster, in
+shadow mode first, and supplies the estate facts the chart leaves
+without a default: the tier label, the AWS region, the tier TTLs, the
+allow-listed buckets and SSM roots, the identity map. Flipping
+`confirm` to `true` together with the sweep RBAC is the admin's
+decision. The Go module `deploy/pulumi/testtier` is the AWS side, for a
+Pulumi stack the admin runs: the tenant and SDK test identities and the
+identity the service sweeps with. See
+[docs/adoption.md](docs/adoption.md) and
+[docs/doctrine.md](docs/doctrine.md).
+
+**Company part.** A company's SRE writes the committed `gemaal.yaml`
+(per-cluster helm values, build hooks, the identity map) in the
+company's own repositories, and its test suites and pipelines call
+`gemaalctl` or import `pkg/harness`. The service only uninstalls and
+sweeps what those installs leave behind. See
+[docs/reference.md](docs/reference.md) and
+[docs/harness-ci.md](docs/harness-ci.md).
+
 ## Consumers
 
 | Consumer | Surface |
 |---|---|
-| `truvity/gitops` | the chart, Kargo-promoted |
-| `truvity/policy` | its example e2e harness, Go `harness` |
+| the maintainers' platform repository | the chart, deployed by Argo CD; Go module `deploy/pulumi/testtier` |
+| `truvity/sluis` | Go `pkg/harness`, in the end-to-end suite of its `audit` module |
 
 ## Neighbours
 
